@@ -2,7 +2,7 @@
 // @name         AI 生图参考图一键填充
 // @namespace    https://github.com/yjiace/ai-ref-autofill
 // @supportURL   https://github.com/yjiace/ai-ref-autofill/issues
-// @version      0.0.1
+// @version      0.0.2
 // @license      MIT
 // @description  在 Gemini / ChatGPT / Grok / 豆包 / 通义 等生图聊天页内浏览中文 AI 脸库、服装库、姿势库（含多角度与深度图 Depth），选择后自动把高清参考图和提示词填入对话框，由你自己点击生成
 // @match        https://gemini.google.com/*
@@ -90,7 +90,7 @@
         ['赛博朋克霓虹', '赛博朋克风格，霓虹灯光，夜景'],
         ['角色设定图（白底）', '角色设定图，纯白背景，全身展示'],
     ];
-    const DEF = { method: 'auto', order: 'imgFirst', maxImages: '', append: true, autoSend: false, safe: true, convert: 'jpeg', style: '' };
+    const DEF = { method: 'auto', order: 'imgFirst', maxImages: '', append: true, autoSend: false, safe: true, convert: 'jpeg', style: '', dockPos: 'auto' };
     const settings = Object.assign({}, DEF, GM_getValue('settings', {}));
     const saveSettings = () => GM_setValue('settings', settings);
     // 站点对参考图数量的限制（0 = 不限）。可按站点配置
@@ -117,7 +117,7 @@
     const state = {
         tab: 'face', raw: {}, items: {}, sel: {}, q: '', f1: '', f2: '',
         list: [], shown: 0, bases: CONFIG.sources.slice(), dirty: false, busy: false,
-        poseDepth: false, dragging: false, resizing: false,
+        poseDepth: false, dragging: false, resizing: false, fabDragging: false,
     };
 
     function toArray(j) {
@@ -736,11 +736,15 @@
 [hidden]{display:none!important}
 .r{--bg:#f6f7f8;--bg2:#fff;--ink:#20252b;--mu:#6b7480;--ln:#d9dde2;--ac:#2f5d8a;--ff:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;font:13px/1.4 var(--ff);color:var(--ink)}
 @media (prefers-color-scheme:dark){.r{--bg:#1d2126;--bg2:#272c33;--ink:#e6e9ed;--mu:#97a0ab;--ln:#3a4048;--ac:#6fa3d6}}
-.fab{position:fixed;right:16px;bottom:96px;z-index:2147483646;height:38px;padding:0 14px;border:0;border-radius:19px;background:var(--ac);color:#fff;font:600 13px var(--ff);cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3)}
-.panel{position:fixed;right:16px;bottom:16px;z-index:2147483647;width:440px;min-width:320px;max-width:calc(100vw - 16px);height:min(86vh,780px);min-height:360px;max-height:calc(100vh - 16px);display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--ln);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.3);overflow:hidden}
+.fab{position:fixed;z-index:2147483646;height:38px;padding:0 14px;border:0;border-radius:19px;background:var(--ac);color:#fff;font:600 13px var(--ff);cursor:default;box-shadow:0 2px 10px rgba(0,0,0,.3);user-select:none;-webkit-user-select:none;touch-action:none;display:flex;align-items:center;justify-content:center;gap:4px}
+.fab.grabbing{opacity:.9}
+.fab.active{box-shadow:0 0 0 2px var(--bg), 0 0 0 4px var(--ac), 0 4px 16px rgba(0,0,0,.35)}
+.btn-sub{border:1px solid var(--ln);background:var(--bg);color:var(--ink);padding:3px 10px;border-radius:4px;cursor:pointer;font:11px var(--ff)}
+.btn-sub:hover{border-color:var(--ac);color:var(--ac)}
+.panel{position:fixed;z-index:2147483647;width:440px;min-width:320px;max-width:calc(100vw - 16px);height:min(86vh,780px);min-height:360px;max-height:calc(100vh - 16px);display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--ln);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.3);overflow:hidden}
 .panel.dragging{user-select:none;-webkit-user-select:none}
-header{display:flex;align-items:center;gap:4px;padding:8px 8px 0;border-bottom:1px solid var(--ln);cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none}
-header.grabbing{cursor:grabbing}
+header{display:flex;align-items:center;gap:4px;padding:8px 8px 0;border-bottom:1px solid var(--ln);cursor:default;user-select:none;-webkit-user-select:none;touch-action:none}
+header.grabbing{cursor:default}
 header button, header .tabs{cursor:default}
 .rh{position:absolute;z-index:10;touch-action:none}
 .rh-nw{left:0;top:0;width:12px;height:12px;cursor:nwse-resize}
@@ -754,7 +758,9 @@ header button, header .tabs{cursor:default}
 .tabs{display:flex;flex:1;gap:2px}
 .tab{padding:7px 14px;border:0;background:none;color:var(--mu);font:600 13px var(--ff);cursor:pointer;border-bottom:2px solid transparent}
 .tab.on{color:var(--ink);border-color:var(--ac)}
-.x{border:0;background:none;color:var(--mu);font-size:16px;cursor:pointer;padding:4px 8px}
+.h-icon,.x{border:0;background:none;color:var(--mu);cursor:pointer;width:24px;height:24px;padding:0;border-radius:4px;display:inline-flex;align-items:center;justify-content:center}
+.h-icon:hover,.x:hover{color:var(--ink);background:var(--bg2)}
+.h-icon svg,.x svg{display:block;pointer-events:none}
 .bar{display:flex;gap:6px;padding:8px}
 input,select,textarea{font:12px var(--ff);color:var(--ink);background:var(--bg2);border:1px solid var(--ln);border-radius:6px;padding:5px 7px}
 .bar input{flex:1;min-width:0}.bar select{max-width:110px}
@@ -784,15 +790,12 @@ summary{cursor:pointer;font-weight:600;font-size:12px}
 .row{display:flex;gap:6px;margin:6px 0}.row input{flex:1;min-width:0}
 textarea{width:100%;resize:vertical;margin-top:2px}
 .link{border:0;background:none;color:var(--ac);cursor:pointer;font-size:11px;padding:2px 0}
-.set label{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:5px 0;font-size:12px}
+.set-group label{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0;font-size:12px}
 footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--ln)}
 #msg{flex:1;font-size:11px;color:var(--mu)}
 .go{border:0;border-radius:6px;background:var(--ac);color:#fff;padding:8px 14px;font:600 13px var(--ff);cursor:pointer}
 .go:disabled{opacity:.5;cursor:wait}
 .empty{grid-column:1/-1;padding:30px 0;text-align:center;color:var(--mu)}
-.panel-foot{display:flex;justify-content:center;align-items:center;padding:3px 8px 5px;background:var(--bg)}
-.about-btn{border:0;background:none;color:var(--mu);cursor:pointer;font-size:11px;padding:1px 6px;text-decoration:underline;text-underline-offset:2px;opacity:.85}
-.about-btn:hover{opacity:1;color:var(--ac)}
 .modal-mask{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:30;display:flex;align-items:center;justify-content:center;padding:14px;backdrop-filter:blur(2px)}
 .modal{width:100%;max-height:92%;background:var(--bg2);border:1px solid var(--ln);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden}
 .modal-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--ln);font:600 13px var(--ff);color:var(--ink)}
@@ -823,6 +826,34 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
         kids.flat().forEach((c) => e.append(c));
         return e;
     };
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const makeIcon = (type) => {
+        const s = document.createElementNS(svgNS, 'svg');
+        s.setAttribute('viewBox', '0 0 24 24');
+        s.setAttribute('fill', 'none');
+        s.setAttribute('stroke', 'currentColor');
+        s.setAttribute('stroke-width', '2');
+        s.setAttribute('stroke-linecap', 'round');
+        s.setAttribute('stroke-linejoin', 'round');
+        let d = '';
+        if (type === 'settings') {
+            s.setAttribute('width', '14');
+            s.setAttribute('height', '14');
+            d = 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z';
+        } else if (type === 'about') {
+            s.setAttribute('width', '15');
+            s.setAttribute('height', '15');
+            d = 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z M12 16v-4 M12 8h.01';
+        } else if (type === 'close') {
+            s.setAttribute('width', '15');
+            s.setAttribute('height', '15');
+            d = 'M19 5L5 19M5 5l14 14';
+        }
+        const p = document.createElementNS(svgNS, 'path');
+        p.setAttribute('d', d);
+        s.append(p);
+        return s;
+    };
     const selK = (k, opts) => h('select', { 'data-k': k }, opts.map(([v, t]) => h('option', { value: v, textContent: t })));
     const chkK = (k) => h('input', { type: 'checkbox', 'data-k': k });
     root.append(h('div', { class: 'r' },
@@ -836,7 +867,11 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
             h('div', { class: 'rh rh-sw', 'data-dir': 'sw' }),
             h('div', { class: 'rh rh-s', 'data-dir': 's' }),
             h('div', { class: 'rh rh-se', 'data-dir': 'se' }),
-            h('header', null, h('nav', { class: 'tabs', id: 'tabs' }), h('button', { class: 'x', id: 'close', textContent: '✕' })),
+            h('header', null,
+                h('nav', { class: 'tabs', id: 'tabs' }),
+                h('button', { class: 'h-icon', id: 'btn-settings', title: '设置' }, makeIcon('settings')),
+                h('button', { class: 'h-icon', id: 'btn-about', title: '关于 / 数据来源' }, makeIcon('about')),
+                h('button', { class: 'x', id: 'close', title: '关闭' }, makeIcon('close'))),
             h('div', { class: 'bar' }, h('input', { id: 'q', placeholder: '搜索 中文 / English / 编号' }), h('select', { id: 'f1' }), h('select', { id: 'f2' })),
             h('div', { class: 'mode-bar', id: 'mode-bar' },
                 h('span', { style: 'font-size:11px;color:var(--mu);', textContent: '姿势图视图模式：' }),
@@ -850,22 +885,30 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
                 h('div', { class: 'row' }, h('select', { id: 'style' }), h('input', { id: 'extra', placeholder: '补充描述（可选）' })),
                 h('textarea', { id: 'ta', rows: 6 }),
                 h('button', { class: 'link', id: 'reset', textContent: '重置为自动生成' })),
-            h('details', { class: 'set' }, h('summary', null, '设置'),
-                h('label', null, '注入图片方式', selK('method', [['auto', '自动'], ['paste', '粘贴'], ['drop', '拖放'], ['file', '文件框']])),
-                h('label', null, '填充顺序', selK('order', [['imgFirst', '先图后文'], ['textFirst', '先文后图']])),
-                h('label', null, '图片格式转换', selK('convert', [['jpeg', 'webp→JPEG'], ['png', 'webp→PNG'], ['none', '不转换']])),
-                h('label', null, '最多参考图数（留空=按站点，0=不限）', h('input', { type: 'number', min: 0, placeholder: '自动', 'data-k': 'maxImages', style: 'width:64px' })),
-                h('label', null, '追加到已有输入', chkK('append')),
-                h('label', null, '安全模式（隐藏性感 / 内衣 / 泳装 / 双人）', chkK('safe')),
-                h('label', null, '填充后自动发送', chkK('autoSend'))),
             h('footer', null, h('span', { id: 'msg' }), h('button', { class: 'go', id: 'go', textContent: '填充到对话框' })),
-            h('div', { class: 'panel-foot' },
-                h('button', { class: 'about-btn', id: 'about-btn', textContent: '关于 / 数据来源' })),
+            h('div', { class: 'modal-mask', id: 'settings-modal', hidden: true },
+                h('div', { class: 'modal' },
+                    h('div', { class: 'modal-hd' },
+                        h('span', null, '⚙️ 偏好设置'),
+                        h('button', { class: 'x', id: 'settings-close', title: '关闭' }, makeIcon('close'))),
+                    h('div', { class: 'modal-bd' },
+                        h('div', { class: 'set-group' },
+                            h('label', null, '弹框吸附方位', selK('dockPos', [['auto', '自动计算'], ['left', '固定在图标左边'], ['right', '固定在图标右边'], ['top', '固定在图标上方'], ['bottom', '固定在图标下方']])),
+                            h('label', null, '注入图片方式', selK('method', [['auto', '自动'], ['paste', '粘贴'], ['drop', '拖放'], ['file', '文件框']])),
+                            h('label', null, '填充顺序', selK('order', [['imgFirst', '先图后文'], ['textFirst', '先文后图']])),
+                            h('label', null, '图片格式转换', selK('convert', [['jpeg', 'webp→JPEG'], ['png', 'webp→PNG'], ['none', '不转换']])),
+                            h('label', null, '最多参考图数（留空=按站点，0=不限）', h('input', { type: 'number', min: 0, placeholder: '自动', 'data-k': 'maxImages', style: 'width:64px' })),
+                            h('label', null, '追加到已有输入', chkK('append')),
+                            h('label', null, '安全模式（隐藏性感 / 内衣 / 泳装 / 双人）', chkK('safe')),
+                            h('label', null, '填充后自动发送', chkK('autoSend')),
+                            h('label', null, '窗口与图标布局', h('button', { class: 'btn-sub', id: 'reset-layout', type: 'button', textContent: '重置位置与大小' })))),
+                    h('div', { class: 'modal-ft' },
+                        h('button', { class: 'modal-btn', id: 'settings-ok', textContent: '完成' })))),
             h('div', { class: 'modal-mask', id: 'about-modal', hidden: true },
                 h('div', { class: 'modal' },
                     h('div', { class: 'modal-hd' },
                         h('span', null, '关于 / 数据来源与免责声明'),
-                        h('button', { class: 'x', id: 'modal-close', textContent: '✕' })),
+                        h('button', { class: 'x', id: 'modal-close', title: '关闭' }, makeIcon('close'))),
                     h('div', { class: 'modal-bd' },
                         h('div', { class: 'modal-sec' },
                             h('div', { class: 'modal-title', textContent: '📌 数据与素材致谢' }),
@@ -901,7 +944,10 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
         modeBar: $('#mode-bar'), btnNorm: $('#btn-norm'), btnDepth: $('#btn-depth'),
         meta: $('#meta'), grid: $('#grid'), tray: $('#tray'), style: $('#style'), extra: $('#extra'),
         ta: $('#ta'), go: $('#go'), msg: $('#msg'),
-        aboutBtn: $('#about-btn'), aboutModal: $('#about-modal'), modalClose: $('#modal-close'), modalOk: $('#modal-ok')
+        btnSettings: $('#btn-settings'), btnAbout: $('#btn-about'),
+        aboutModal: $('#about-modal'), modalClose: $('#modal-close'), modalOk: $('#modal-ok'),
+        settingsModal: $('#settings-modal'), settingsClose: $('#settings-close'), settingsOk: $('#settings-ok'),
+        resetLayout: $('#reset-layout')
     };
     const msg = (t) => { ui.msg.textContent = t; };
     const cardMap = new Map();
@@ -1066,6 +1112,7 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
             settings[k] = c.type === 'checkbox' ? c.checked : c.value; saveSettings();
             if (k === 'safe') { renderFilters(); renderGrid(); }
             if (k === 'maxImages') renderGrid();
+            if (k === 'dockPos' && !ui.panel.hidden) anchorPanel();
         };
     });
     let tmr; ui.q.oninput = () => { clearTimeout(tmr); tmr = setTimeout(() => { state.q = ui.q.value; renderGrid(); }, 150); };
@@ -1084,45 +1131,200 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
 
     ui.go.onclick = fillChat;
 
-    const setModal = (open) => { ui.aboutModal.hidden = !open; };
-    ui.aboutBtn.onclick = (e) => { e.stopPropagation(); setModal(true); };
-    ui.modalClose.onclick = () => setModal(false);
-    ui.modalOk.onclick = () => setModal(false);
-    ui.aboutModal.onclick = (e) => { if (e.target === ui.aboutModal) setModal(false); };
+    const closeAllModals = () => {
+        ui.aboutModal.hidden = true;
+        ui.settingsModal.hidden = true;
+    };
+    const openModal = (m) => {
+        closeAllModals();
+        m.hidden = false;
+    };
 
-    /* ───────────── 拖拽、缩放与位置持久化 ───────────── */
+    ui.btnAbout.onclick = (e) => { e.stopPropagation(); openModal(ui.aboutModal); };
+    ui.modalClose.onclick = closeAllModals;
+    ui.modalOk.onclick = closeAllModals;
+    ui.aboutModal.onclick = (e) => { if (e.target === ui.aboutModal) closeAllModals(); };
+
+    ui.btnSettings.onclick = (e) => { e.stopPropagation(); openModal(ui.settingsModal); };
+    ui.settingsClose.onclick = closeAllModals;
+    ui.settingsOk.onclick = closeAllModals;
+    ui.settingsModal.onclick = (e) => { if (e.target === ui.settingsModal) closeAllModals(); };
+
+    /* ───────────── 拖拽、缩放、锚定与位置持久化 ───────────── */
+    function defaultFabPos() {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        return {
+            x: Math.max(8, vw - 88 - 16),
+            y: Math.max(8, vh - 38 - 96),
+        };
+    }
+    function getStoredFabPos() {
+        return GM_getValue('fab_pos', null);
+    }
+    function saveFabPos(pos) {
+        try { GM_setValue('fab_pos', pos); } catch (_) { }
+    }
+    function clampFabPos(pos) {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const fw = ui.fab.offsetWidth || 88;
+        const fh = ui.fab.offsetHeight || 38;
+        const x = Math.max(8, Math.min(pos.x, vw - fw - 8));
+        const y = Math.max(8, Math.min(pos.y, vh - fh - 8));
+        return { x, y };
+    }
+    function applyFabPos(pos) {
+        const p = clampFabPos(pos);
+        ui.fab.style.left = p.x + 'px';
+        ui.fab.style.top = p.y + 'px';
+        ui.fab.style.right = 'auto';
+        ui.fab.style.bottom = 'auto';
+        return p;
+    }
+
     function getStoredRect() {
         return GM_getValue('panel_rect', null);
     }
     function saveRect(rect) {
         try { GM_setValue('panel_rect', rect); } catch (_) { }
     }
-    function clampRect(rect) {
+
+    function anchorPanel() {
+        const fabRect = ui.fab.getBoundingClientRect();
+        const stored = getStoredRect() || {};
         const vw = window.innerWidth;
         const vh = window.innerHeight;
-        const w = Math.max(320, Math.min(rect.w || 440, vw - 16));
-        const h = Math.max(360, Math.min(rect.h || 680, vh - 16));
-        let x = rect.x;
-        let y = rect.y;
-        if (x == null || y == null) {
-            x = Math.max(8, vw - w - 16);
-            y = Math.max(8, vh - h - 16);
-        } else {
-            x = Math.max(8, Math.min(x, vw - w - 8));
-            y = Math.max(8, Math.min(y, vh - h - 8));
+        const pw = Math.max(320, Math.min(stored.w || 440, vw - 16));
+        const ph = Math.max(360, Math.min(stored.h || Math.min(Math.round(vh * 0.86), 780), vh - 16));
+        const GAP = 10;
+
+        const leftSpace = fabRect.left - GAP - 8;
+        const rightSpace = vw - fabRect.right - GAP - 8;
+        const topSpace = fabRect.top - GAP - 8;
+        const bottomSpace = vh - fabRect.bottom - GAP - 8;
+
+        let placement = settings.dockPos || 'auto';
+
+        if (placement === 'auto') {
+            const isRightHalf = (fabRect.left + fabRect.width / 2) > (vw / 2);
+            const isBottomHalf = (fabRect.top + fabRect.height / 2) > (vh / 2);
+            if (isRightHalf && leftSpace >= pw) {
+                placement = 'left';
+            } else if (!isRightHalf && rightSpace >= pw) {
+                placement = 'right';
+            } else if (isBottomHalf && topSpace >= ph) {
+                placement = 'top';
+            } else if (!isBottomHalf && bottomSpace >= ph) {
+                placement = 'bottom';
+            } else {
+                const maxSpace = Math.max(leftSpace, rightSpace, topSpace, bottomSpace);
+                if (maxSpace === leftSpace) placement = 'left';
+                else if (maxSpace === rightSpace) placement = 'right';
+                else if (maxSpace === topSpace) placement = 'top';
+                else placement = 'bottom';
+            }
         }
-        return { x, y, w, h };
-    }
-    function applyRect(rect) {
-        const r = clampRect(rect);
-        ui.panel.style.left = r.x + 'px';
-        ui.panel.style.top = r.y + 'px';
+
+        let targetX = 0;
+        let targetY = 0;
+
+        if (placement === 'left') {
+            targetX = fabRect.left - GAP - pw;
+            if (targetX < 8 && rightSpace > leftSpace) {
+                targetX = fabRect.right + GAP;
+            }
+            targetY = fabRect.bottom - ph;
+        } else if (placement === 'right') {
+            targetX = fabRect.right + GAP;
+            if (targetX + pw > vw - 8 && leftSpace > rightSpace) {
+                targetX = fabRect.left - GAP - pw;
+            }
+            targetY = fabRect.bottom - ph;
+        } else if (placement === 'top') {
+            targetY = fabRect.top - GAP - ph;
+            if (targetY < 8 && bottomSpace > topSpace) {
+                targetY = fabRect.bottom + GAP;
+            }
+            targetX = fabRect.right - pw;
+        } else if (placement === 'bottom') {
+            targetY = fabRect.bottom + GAP;
+            if (targetY + ph > vh - 8 && topSpace > bottomSpace) {
+                targetY = fabRect.top - GAP - ph;
+            }
+            targetX = fabRect.right - pw;
+        }
+
+        targetX = Math.max(8, Math.min(targetX, vw - pw - 8));
+        targetY = Math.max(8, Math.min(targetY, vh - ph - 8));
+
+        ui.panel.style.left = targetX + 'px';
+        ui.panel.style.top = targetY + 'px';
         ui.panel.style.right = 'auto';
         ui.panel.style.bottom = 'auto';
-        ui.panel.style.width = r.w + 'px';
-        ui.panel.style.height = r.h + 'px';
+        ui.panel.style.width = pw + 'px';
+        ui.panel.style.height = ph + 'px';
+
+        saveRect({ x: targetX, y: targetY, w: pw, h: ph });
+        return { x: targetX, y: targetY, w: pw, h: ph };
     }
 
+    /* 浮动图标 (FAB) 拖拽手势 */
+    let fabDrag = { active: false, moved: false, startX: 0, startY: 0, initLeft: 0, initTop: 0 };
+    ui.fab.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        fabDrag.active = true;
+        fabDrag.moved = false;
+        fabDrag.startX = e.clientX;
+        fabDrag.startY = e.clientY;
+        const rect = ui.fab.getBoundingClientRect();
+        fabDrag.initLeft = rect.left;
+        fabDrag.initTop = rect.top;
+        ui.fab.setPointerCapture(e.pointerId);
+    });
+
+    ui.fab.addEventListener('pointermove', (e) => {
+        if (!fabDrag.active) return;
+        const dx = e.clientX - fabDrag.startX;
+        const dy = e.clientY - fabDrag.startY;
+        if (!fabDrag.moved && Math.hypot(dx, dy) > 4) {
+            fabDrag.moved = true;
+            state.fabDragging = true;
+            ui.fab.classList.add('grabbing');
+        }
+        if (fabDrag.moved) {
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const fw = ui.fab.offsetWidth || 88;
+            const fh = ui.fab.offsetHeight || 38;
+            const nx = Math.max(8, Math.min(fabDrag.initLeft + dx, vw - fw - 8));
+            const ny = Math.max(8, Math.min(fabDrag.initTop + dy, vh - fh - 8));
+            applyFabPos({ x: nx, y: ny });
+            if (!ui.panel.hidden) {
+                anchorPanel();
+            }
+        }
+    });
+
+    const onFabUp = (e) => {
+        if (!fabDrag.active) return;
+        fabDrag.active = false;
+        ui.fab.classList.remove('grabbing');
+        try { ui.fab.releasePointerCapture(e.pointerId); } catch (_) { }
+        if (fabDrag.moved) {
+            const cur = ui.fab.getBoundingClientRect();
+            saveFabPos({ x: cur.left, y: cur.top });
+            setTimeout(() => { state.fabDragging = false; }, 60);
+        } else {
+            state.fabDragging = false;
+            toggle();
+        }
+    };
+    ui.fab.addEventListener('pointerup', onFabUp);
+    ui.fab.addEventListener('pointercancel', onFabUp);
+
+    /* 面板标题栏拖动联动 */
     const headerEl = ui.panel.querySelector('header');
     headerEl.addEventListener('pointerdown', (e) => {
         if (e.target.closest('button, nav, input, select')) return;
@@ -1130,25 +1332,36 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
         state.dragging = true;
         headerEl.classList.add('grabbing');
         ui.panel.classList.add('dragging');
-        const rect = ui.panel.getBoundingClientRect();
+        const pRect = ui.panel.getBoundingClientRect();
+        const fRect = ui.fab.getBoundingClientRect();
         const startX = e.clientX;
         const startY = e.clientY;
-        const initLeft = rect.left;
-        const initTop = rect.top;
-        const w = rect.width;
-        const h = rect.height;
+        const initPLeft = pRect.left;
+        const initPTop = pRect.top;
+        const initFLeft = fRect.left;
+        const initFTop = fRect.top;
+        const pw = pRect.width;
+        const ph = pRect.height;
+        const fw = fRect.width;
+        const fh = fRect.height;
 
         const onMove = (ev) => {
             const dx = ev.clientX - startX;
             const dy = ev.clientY - startY;
             const vw = window.innerWidth;
             const vh = window.innerHeight;
-            const newX = Math.max(8, Math.min(initLeft + dx, vw - w - 8));
-            const newY = Math.max(8, Math.min(initTop + dy, vh - h - 8));
-            ui.panel.style.left = newX + 'px';
-            ui.panel.style.top = newY + 'px';
-            ui.panel.style.right = 'auto';
-            ui.panel.style.bottom = 'auto';
+
+            const newPX = Math.max(8, Math.min(initPLeft + dx, vw - pw - 8));
+            const newPY = Math.max(8, Math.min(initPTop + dy, vh - ph - 8));
+            const effectiveDX = newPX - initPLeft;
+            const effectiveDY = newPY - initPTop;
+
+            ui.panel.style.left = newPX + 'px';
+            ui.panel.style.top = newPY + 'px';
+
+            const newFX = Math.max(8, Math.min(initFLeft + effectiveDX, vw - fw - 8));
+            const newFY = Math.max(8, Math.min(initFTop + effectiveDY, vh - fh - 8));
+            applyFabPos({ x: newFX, y: newFY });
         };
         const onUp = () => {
             state.dragging = false;
@@ -1156,13 +1369,16 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
             ui.panel.classList.remove('dragging');
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
-            const cur = ui.panel.getBoundingClientRect();
-            saveRect({ x: cur.left, y: cur.top, w: cur.width, h: cur.height });
+            const curP = ui.panel.getBoundingClientRect();
+            saveRect({ x: curP.left, y: curP.top, w: curP.width, h: curP.height });
+            const curF = ui.fab.getBoundingClientRect();
+            saveFabPos({ x: curF.left, y: curF.top });
         };
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
     });
 
+    /* 缩放手柄 */
     root.querySelectorAll('.rh').forEach((rh) => {
         rh.addEventListener('pointerdown', (e) => {
             e.preventDefault();
@@ -1230,34 +1446,55 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
                 window.removeEventListener('pointerup', onUp);
                 const cur = ui.panel.getBoundingClientRect();
                 saveRect({ x: cur.left, y: cur.top, w: cur.width, h: cur.height });
+                anchorPanel();
             };
             window.addEventListener('pointermove', onMove);
             window.addEventListener('pointerup', onUp);
         });
     });
 
+    /* 重置布局 */
+    function resetLayout() {
+        try {
+            GM_deleteValue('fab_pos');
+            GM_deleteValue('panel_rect');
+        } catch (_) { }
+        const defFab = defaultFabPos();
+        applyFabPos(defFab);
+        saveFabPos(defFab);
+
+        const vh = window.innerHeight;
+        const defaultRect = {
+            w: 440,
+            h: Math.min(Math.round(vh * 0.86), 780),
+        };
+        saveRect(defaultRect);
+        anchorPanel();
+        msg('已重置图标位置与弹框默认大小');
+    }
+    ui.resetLayout.onclick = resetLayout;
+
     function toggle(open) {
         const show = open ?? ui.panel.hidden;
-        ui.panel.hidden = !show; ui.fab.hidden = show;
+        ui.panel.hidden = !show;
+        ui.fab.classList.toggle('active', show);
         if (show) {
-            const stored = getStoredRect();
-            if (stored) applyRect(stored);
+            anchorPanel();
             if (!state.items[state.tab] && !state.loading) switchTab(state.tab);
         } else {
-            setModal(false);
+            closeAllModals();
         }
     }
-    ui.fab.onclick = () => toggle(true);
     $('#close').onclick = () => toggle(false);
     addEventListener('keydown', (e) => {
         if (e.altKey && e.shiftKey && e.code === 'KeyR') toggle();
-        if (e.key === 'Escape' && !ui.aboutModal.hidden) setModal(false);
+        if (e.key === 'Escape' && (!ui.aboutModal.hidden || !ui.settingsModal.hidden)) closeAllModals();
     }, true);
 
     // 点击区域外自动隐藏面板
     addEventListener('pointerdown', (e) => {
         if (ui.panel.hidden) return;
-        if (state.dragging || state.resizing) return;
+        if (state.dragging || state.resizing || state.fabDragging) return;
         const path = e.composedPath ? e.composedPath() : [];
         if (path.includes(host) || path.includes(ui.panel) || path.includes(ui.fab)) return;
         toggle(false);
@@ -1265,15 +1502,18 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
 
     // 窗口尺寸变化时自适应边界
     addEventListener('resize', () => {
+        const curFab = getStoredFabPos() || defaultFabPos();
+        applyFabPos(curFab);
         if (!ui.panel.hidden) {
-            const cur = ui.panel.getBoundingClientRect();
-            applyRect({ x: cur.left, y: cur.top, w: cur.width, h: cur.height });
+            anchorPanel();
         }
     });
 
     renderTray(); refreshPrompt();
     switchTab('face').then(() => { /* 预热第一个库 */ });
     ui.panel.hidden = true;
+    const initialFab = getStoredFabPos() || defaultFabPos();
+    applyFabPos(initialFab);
 
     const mount = () => {
         try {
