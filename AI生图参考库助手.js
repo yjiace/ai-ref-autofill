@@ -2,7 +2,7 @@
 // @name         AI 生图参考图一键填充
 // @namespace    https://github.com/yjiace/ai-ref-autofill
 // @supportURL   https://github.com/yjiace/ai-ref-autofill/issues
-// @version      0.0.4
+// @version      0.0.5
 // @license      MIT
 // @description  在 Gemini / ChatGPT / Grok / 豆包 / 通义 等生图聊天页内浏览中文 AI 脸库、服装库、姿势库（含多角度与深度图 Depth），选择后自动把高清参考图和提示词填入对话框，由你自己点击生成
 // @match        https://gemini.google.com/*
@@ -43,15 +43,17 @@
 // @connect      ai-pose-gallery.smallyoung.cn
 // @connect      ai-pose-gallery.anhao.app
 // @connect      charadb-2fi.pages.dev
+// @connect      ai-costume-anime-gallery.pages.dev
 // @connect      cdn.jsdelivr.net
 // @connect      fastly.jsdelivr.net
 // @connect      raw.githubusercontent.com
+// @connect      *
 // ==/UserScript==
 
 /*
- * 数据与图片来自 anhao/ai-pose-gallery-zh（原作者 ギア @giaaibusi；二次元服装作者 たき AI @taki_auto · CharaDB）。
+ * 数据与图片来自 anhao/ai-pose-gallery-zh（原作者 ギア @giaaibusi；中国历代服饰 Shisei；二次元服装 たき AI @taki_auto · CharaDB）。
  * 脚本只在运行时从公开/私有地址读取，不打包、不再分发图片。
- * 姿势库 / 服装库图片禁止再分发，脸库为 CC0；使用请遵守原仓库的免责声明。
+ * 姿势库 / 服装库图片禁止再分发，脸库与中国历代服饰为 CC0；使用请遵守原仓库的免责声明。
  * 想在其他站点使用：在上面追加 @match 即可。
  */
 (() => {
@@ -67,10 +69,23 @@
             'https://cdn.jsdelivr.net/gh/anhao/ai-pose-gallery-zh@main/',
             'https://raw.githubusercontent.com/anhao/ai-pose-gallery-zh/main/',
         ],
+        // 远程配置清单地址（存在时自动接管文件列表、内容哈希、分类标签与字段映射，实现零代码改动的动态热更新）
+        manifest: 'data/manifest.json',
         files: {
             pose: 'data/pose-zh.json',
-            costume: ['data/costume-zh.json', 'data/costume-anime-zh.json'],
+            costume: [
+                'data/costume-zh.json',
+                'data/costume-shisei-zh.json',
+                'data/costume-anime-zh.json',
+                'data/costume-gia-anime-zh.json',
+            ],
             face: 'data/portrait-zh.json'
+        },
+        sourceLabels: {
+            gia: '现实穿搭',
+            shisei: '中国历代',
+            charadb: '二次元·CharaDB',
+            'gia-anime': '二次元·ギア',
         },
         // 字段名自动识别不准时在这里覆盖，例如：
         // costume: { id: '编号', title: '服装名称', cat: '分类', thumb: '缩略图', full: '原图', desc: '标签', en: '英文Prompt' }
@@ -79,8 +94,8 @@
     };
 
     const LIBS = [['face', '脸'], ['costume', '服装'], ['pose', '姿势']];
-    const LABELS = { face: ['分区', '发长'], costume: ['分类', '大类'], pose: ['动作分类', '体系'] };
-    const NSFW = /性感|缠绵|内衣|睡衣|泳装/;
+    const LABELS = { face: ['发长', '发型'], costume: ['大类', '分类'], pose: ['体系', '动作分类'] };
+    const NSFW = /性感|缠绵|内衣|睡衣|泳装|魅力写真|双人互动|贴身穿搭|魅力穿搭/;
     const STYLES = [
         ['不指定（跟随参考图）', ''],
         ['写实人像写真', '写实人像摄影，自然光线，真实皮肤质感'],
@@ -118,6 +133,9 @@
         tab: 'face', raw: {}, items: {}, sel: {}, q: '', f1: '', f2: '',
         list: [], shown: 0, bases: CONFIG.sources.slice(), dirty: false, busy: false,
         poseDepth: false, dragging: false, resizing: false, fabDragging: false,
+        manifestLoaded: false, manifestHashes: {},
+        sourceLabels: Object.assign({}, CONFIG.sourceLabels),
+        nsfwRe: NSFW,
     };
 
     function toArray(j) {
@@ -134,21 +152,70 @@
         return best;
     }
 
-    async function loadRaw(lib) {
-        const key = 'cache_v2_' + lib;
-        const c = GM_getValue(key, null);
-        if (c && Date.now() - c.t < CONFIG.cacheHours * 3600e3 && c.d && c.d.length) return c.d;
-        const fileList = Array.isArray(CONFIG.files[lib]) ? CONFIG.files[lib] : [CONFIG.files[lib]];
-        let err;
+    async function ensureManifest() {
+        if (state.manifestLoaded) return;
+        state.manifestLoaded = true;
+        if (!CONFIG.manifest) return;
         for (const base of CONFIG.sources) {
             try {
+                const m = JSON.parse(await gm(base + CONFIG.manifest));
+                if (!m || typeof m !== 'object' || !m.libraries) continue;
+                state.bases = [base, ...CONFIG.sources.filter((b) => b !== base)];
+                if (m.sourceLabels && typeof m.sourceLabels === 'object') {
+                    Object.assign(state.sourceLabels, m.sourceLabels);
+                }
+                if (m.mapping && typeof m.mapping === 'object') {
+                    for (const [k, v] of Object.entries(m.mapping)) {
+                        if (v && typeof v === 'object') Object.assign((CONFIG.mapping[k] = CONFIG.mapping[k] || {}), v);
+                    }
+                }
+                if (m.nsfwPattern && typeof m.nsfwPattern === 'string') {
+                    try { state.nsfwRe = new RegExp(m.nsfwPattern); } catch (_) { }
+                }
+                for (const [lib, def] of Object.entries(m.libraries)) {
+                    if (!def || typeof def !== 'object') continue;
+                    if (Array.isArray(def.files) && def.files.length) CONFIG.files[lib] = def.files;
+                    if (Array.isArray(def.filters) && def.filters.length === 2) LABELS[lib] = def.filters;
+                    if (def.hash) state.manifestHashes[lib] = String(def.hash);
+                }
+                return;
+            } catch (_) { /* 当前源无 manifest 或网络异常则尝试下一源，最终回退内置 CONFIG */ }
+        }
+    }
+
+    async function loadRaw(lib) {
+        await ensureManifest();
+        const key = 'cache_v4_' + lib;
+        const remoteHash = state.manifestHashes[lib] || '';
+        const c = GM_getValue(key, null);
+        if (c && c.d && c.d.length) {
+            if (remoteHash ? c.h === remoteHash : (Date.now() - c.t < CONFIG.cacheHours * 3600e3)) {
+                return c.d;
+            }
+        }
+        const rawFiles = Array.isArray(CONFIG.files[lib]) ? CONFIG.files[lib] : [CONFIG.files[lib]];
+        const fileDefs = rawFiles.map((f) => (typeof f === 'string' ? { path: f } : f)).filter((f) => f && f.path);
+        let err;
+        for (const base of state.bases) {
+            try {
                 const results = await Promise.all(
-                    fileList.map(async (file) => toArray(JSON.parse(await gm(base + file))))
+                    fileDefs.map(async (f) => {
+                        const list = toArray(JSON.parse(await gm(base + f.path)));
+                        if (f.cat2 || f.source) {
+                            list.forEach((item) => {
+                                if (item && typeof item === 'object') {
+                                    if (f.cat2 && !item._cat2) item._cat2 = f.cat2;
+                                    if (f.source && !item.source) item.source = f.source;
+                                }
+                            });
+                        }
+                        return list;
+                    })
                 );
                 const arr = results.flat();
                 if (!arr.length) throw new Error('数据为空');
                 state.bases = [base, ...CONFIG.sources.filter((b) => b !== base)];
-                try { GM_setValue(key, { t: Date.now(), d: arr }); } catch (_) { /* 超出存储配额则不缓存 */ }
+                try { GM_setValue(key, { t: Date.now(), h: remoteHash, d: arr }); } catch (_) { /* 超出存储配额则不缓存 */ }
                 return arr;
             } catch (e) { err = e; }
         }
@@ -186,10 +253,11 @@
             const key = sys + '|' + (no || r.id || i);
             let it = groups.get(key);
             if (!it) {
-                const cat = rd(r, 'cat', [/^分类$|分類/]);
-                it = { lib: 'pose', id: key, title: rd(r, 'title', [/姿势名称|ポーズ名/]) || no || key, cat, cat2: sys, angles: [], cur: 0, nsfw: NSFW.test(sys + ' ' + cat), s: '' };
+                const subCat = rd(r, 'cat', [/^分类$|分類/]);
+                it = { lib: 'pose', id: key, title: rd(r, 'title', [/姿势名称|ポーズ名/]) || no || key, cat: sys, cat2: subCat, angles: [], cur: 0, nsfw: Boolean(r.敏感) || state.nsfwRe.test(sys + ' ' + subCat), s: '' };
                 groups.set(key, it);
             }
+            if (r.敏感) it.nsfw = true;
             it.angles.push({
                 angle: rd(r, 'angle', [/角度|アングル/]),
                 thumb: fixPath(rd(r, 'thumb', [/缩略|サムネ|thumb/i]), 'thumb'),
@@ -216,20 +284,45 @@
             }
             const id = rd(r, 'id', [/^id$/i, /图片ID|编号/i]) || lib + '-' + i;
             const isFace = lib === 'face';
-            const cat = rd(r, 'cat', isFace ? [/模式|分区/] : [/^分类$/, /^类别$/, /^子分类$/, /穿搭|季节|分类/]);
-            const cat2 = isFace
-                ? rd(r, 'cat2', [/发长/])
-                : (r.source === 'charadb' || r['一级分类'] === '二次元' || isAbs(thumb) ? '二次元' : '现实穿搭');
-            const hair = isFace ? rd(r, 'hair', [/细分发型|发型/]) : '';
-            const title = rd(r, 'title', isFace ? [/细分发型|发型/] : [/中文.*(名|描述)|名称|款式|单品|name|title/i]) || id;
-            const desc = rd(r, 'desc', [/标签|tags/i]);
+            const rawTags = r['标签'] ?? r.tags;
+            const hair = isFace ? rd(r, 'hair', [/细分发型|发型名称|发型/]) : '';
+            const cat = isFace
+                ? rd(r, 'cat', [/发长/])
+                : (r['大类'] || r._cat2 || (r.source && state.sourceLabels[r.source]) || r['来源'] || (r['一级分类'] === '二次元' || isAbs(thumb) ? '二次元' : '现实穿搭'));
+            const rawSubCat = isFace
+                ? hair
+                : rd(r, 'cat2', [/^分类$/, /^类别$/, /^子分类$/, /穿搭|季节|分类/]);
+            const cat2 = (!isFace && (!rawSubCat || rawSubCat === cat) && Array.isArray(rawTags) && rawTags[0])
+                ? String(rawTags[0])
+                : rawSubCat;
+            const title = rd(r, 'title', isFace ? [/标题|细分发型|发型/] : [/中文.*(名|描述)|名称|款式|单品|name|title/i]) || id;
+            const desc = Array.isArray(rawTags)
+                ? rawTags.filter(Boolean).join('、')
+                : rd(r, 'desc', [/标签|tags/i]);
             const en = rd(r, 'en', [/英文|prompt|english|关键词/i]);
-            return {
+            const hasViews = Array.isArray(r.views) && r.views.length > 0;
+            const angles = hasViews
+                ? r.views.map((v) => ({
+                    angle: v.label || v.id || '',
+                    thumb: fixPath(v['缩略图'] || v.thumb || '', 'thumb', dir),
+                    full: fixPath(v['原图'] || v['预览图'] || v.full || '', 'full', dir),
+                    id: id + '_' + (v.id || v.label || ''),
+                }))
+                : null;
+            const defIdx = hasViews && r.selectedView
+                ? Math.max(0, r.views.findIndex((v) => v.id === r.selectedView))
+                : 0;
+            const item = {
                 lib, id, title, cat, cat2, hair, desc, en,
                 thumb: fixPath(thumb, 'thumb', dir), full: fixPath(full, 'full', dir),
-                nsfw: Boolean(r.敏感) || NSFW.test(cat + ' ' + cat2),
-                search: (rd(r, 'search', [/^检索$|search/i]) || allText(r)).toLowerCase(),
+                nsfw: Boolean(r.敏感) || state.nsfwRe.test(cat + ' ' + cat2),
+                search: [rd(r, 'search', [/^检索$|search/i]) || allText(r), desc, cat, cat2].filter(Boolean).join(' ').toLowerCase(),
             };
+            if (angles) {
+                item.angles = angles;
+                item.cur = defIdx;
+            }
+            return item;
         });
     }
 
@@ -354,7 +447,7 @@
             if (face.isCustom) {
                 lines.push('图' + n + '（人像参考）：保持该人物的脸型与五官。');
             } else {
-                const h = [face.item.cat2, face.item.hair].filter(Boolean).join('·');
+                const h = [face.item.cat, face.item.hair && face.item.hair !== face.item.cat ? face.item.hair : ''].filter(Boolean).join('·');
                 lines.push('图' + n + '（人像参考）：保持该人物的脸型与五官' + (h ? '，发型参考：' + h : '') + '。');
             }
         }
@@ -365,7 +458,9 @@
             } else {
                 const c = costume.item;
                 const d = [c.title, c.desc].filter(Boolean).join('，');
-                lines.push('图' + n + '（服装参考）：让人物穿上图中这套服装' + (d ? '（' + d + '）' : '') + '，保留款式、颜色与细节。' + (c.en ? '\nKeywords: ' + c.en : ''));
+                const ca = c.angles && c.angles[costume.ai] ? c.angles[costume.ai].angle : '';
+                const cAng = ca ? '（' + ca + '视角）' : '';
+                lines.push('图' + n + '（服装参考）：让人物穿上图中这套服装' + (d ? '（' + d + '）' : '') + cAng + '，保留款式、颜色与细节。' + (c.en ? '\nKeywords: ' + c.en : ''));
             }
         }
         if (pose) {
@@ -1028,14 +1123,14 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
                                 h('a', { class: 'modal-a', href: 'https://github.com/anhao/ai-pose-gallery-zh', target: '_blank', rel: 'noopener noreferrer', textContent: 'anhao/ai-pose-gallery-zh' }),
                                 '：'),
                             h('ul', { class: 'modal-ul' },
-                                h('li', null, '姿势库与人像脸库原作者：ギア ', h('a', { class: 'modal-a', href: 'https://x.com/giaaibusi', target: '_blank', rel: 'noopener noreferrer', textContent: '@giaaibusi' })),
-                                h('li', null, '二次元服装库作者：たき AI ', h('a', { class: 'modal-a', href: 'https://x.com/taki_auto', target: '_blank', rel: 'noopener noreferrer', textContent: '@taki_auto' }), ' · CharaDB'),
-                                h('li', null, '现实穿搭库：整理自公共参考数据集'))),
+                                h('li', null, '姿势库、人像脸库与写实/动漫穿搭原作者：ギア ', h('a', { class: 'modal-a', href: 'https://x.com/giaaibusi', target: '_blank', rel: 'noopener noreferrer', textContent: '@giaaibusi' })),
+                                h('li', null, '中国历代服饰库作者：Shisei（', h('a', { class: 'modal-a', href: 'https://www.shiseicostume.com/', target: '_blank', rel: 'noopener noreferrer', textContent: 'shiseicostume.com' }), ' · CC0）'),
+                                h('li', null, '二次元服装库作者：たき AI ', h('a', { class: 'modal-a', href: 'https://x.com/taki_auto', target: '_blank', rel: 'noopener noreferrer', textContent: '@taki_auto' }), ' · CharaDB'))),
                         h('div', { class: 'modal-sec' },
                             h('div', { class: 'modal-title', textContent: '版权与授权说明' }),
                             h('ul', { class: 'modal-ul' },
-                                h('li', null, '人像脸库遵循 CC0 1.0 Universal 公共领域贡献协议。'),
-                                h('li', null, '姿势库、服装库图片素材严禁用于二次分发、商业打包或转售。'))),
+                                h('li', null, '人像脸库与中国历代服饰库遵循 CC0 1.0 Universal 公共领域贡献协议。'),
+                                h('li', null, '姿势库、其余服装库图片素材严禁用于二次分发、商业打包或转售。'))),
                         h('div', { class: 'modal-sec' },
                             h('div', { class: 'modal-title', textContent: '免责声明' }),
                             h('p', { class: 'modal-p', textContent: '1. 本脚本为前端辅助生图工具，只在运行时从公开 CDN 节点按需获取参考图，脚本本身不打包、不转储、不再分发任何版权图片。' }),
@@ -1088,17 +1183,32 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
             (!settings.safe || !it.nsfw) && (!state.f1 || it.cat === state.f1) && (!state.f2 || it.cat2 === state.f2) && words.every((w) => it.search.includes(w)));
     }
 
+    function updateSubFilter(keepVal) {
+        const items = (state.items[state.tab] || []).filter((it) => (!settings.safe || !it.nsfw) && (!state.f1 || it.cat === state.f1));
+        const [, l2] = LABELS[state.tab];
+        ui.f2.hidden = !l2;
+        if (!l2) { state.f2 = ''; return; }
+        const vals = [...new Set(items.map((i) => i.cat2).filter(Boolean))];
+        ui.f2.replaceChildren(h('option', { value: '', textContent: '全部' + l2 }), ...vals.map((v) => h('option', { value: v, textContent: v })));
+        if (keepVal && state.f2 && vals.includes(state.f2)) {
+            ui.f2.value = state.f2;
+        } else {
+            state.f2 = '';
+            ui.f2.value = '';
+        }
+    }
+
     function renderFilters() {
         const items = (state.items[state.tab] || []).filter((it) => !settings.safe || !it.nsfw);
-        const [l1, l2] = LABELS[state.tab];
-        const fill = (sel, label, key) => {
-            sel.hidden = !label;
-            if (!label) return;
-            const vals = [...new Set(items.map((i) => i[key]).filter(Boolean))];
-            sel.replaceChildren(h('option', { value: '', textContent: '全部' + label }), ...vals.map((v) => h('option', { value: v, textContent: v })));
-        };
-        fill(ui.f1, l1, 'cat'); fill(ui.f2, l2, 'cat2');
-        state.f1 = state.f2 = '';
+        const [l1] = LABELS[state.tab];
+        ui.f1.hidden = !l1;
+        if (l1) {
+            const vals = [...new Set(items.map((i) => i.cat).filter(Boolean))];
+            ui.f1.replaceChildren(h('option', { value: '', textContent: '全部' + l1 }), ...vals.map((v) => h('option', { value: v, textContent: v })));
+        }
+        state.f1 = '';
+        state.f2 = '';
+        updateSubFilter(false);
     }
 
     function renderGrid() {
@@ -1258,7 +1368,7 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
         const currentLoadId = viewerLoadId;
 
         const lib = s.item?.lib;
-        const angName = (lib === 'pose' && s.item?.angles && s.item?.angles[s.ai]) ? s.item.angles[s.ai].angle : '';
+        const angName = (s.item?.angles && s.item?.angles[s.ai]) ? s.item.angles[s.ai].angle : '';
         const depthBadge = (lib === 'pose' && s.isDepth) ? ' [深度图]' : '';
         const customBadge = s.isCustom ? ' [自定义]' : '';
         ui.viewerTitle.textContent = label + '参考：' + (s.item?.title || '自定义图片') + (angName ? '·' + angName : '') + depthBadge + customBadge;
@@ -1380,7 +1490,7 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
                         : (s.item.angles ? s.item.angles[s.ai]?.thumb : s.item.thumb);
                     setThumb(im, rel);
                 }
-                const angName = (lib === 'pose' && s.item.angles && s.item.angles[s.ai]) ? s.item.angles[s.ai].angle : '';
+                const angName = (s.item.angles && s.item.angles[s.ai]) ? s.item.angles[s.ai].angle : '';
                 const depthBadge = (lib === 'pose' && s.isDepth) ? ' [深度图]' : '';
                 const customBadge = s.isCustom ? ' [自定义]' : '';
                 const t = document.createElement('span');
@@ -1441,7 +1551,7 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
         };
     });
     let tmr; ui.q.oninput = () => { clearTimeout(tmr); tmr = setTimeout(() => { state.q = ui.q.value; renderGrid(); }, 150); };
-    ui.f1.onchange = () => { state.f1 = ui.f1.value; renderGrid(); };
+    ui.f1.onchange = () => { state.f1 = ui.f1.value; updateSubFilter(true); renderGrid(); };
     ui.f2.onchange = () => { state.f2 = ui.f2.value; renderGrid(); };
 
     const setPoseDepth = (depth) => {
