@@ -2,7 +2,7 @@
 // @name         AI 生图参考图一键填充
 // @namespace    https://github.com/yjiace/ai-ref-autofill
 // @supportURL   https://github.com/yjiace/ai-ref-autofill/issues
-// @version      0.0.2
+// @version      0.0.3
 // @license      MIT
 // @description  在 Gemini / ChatGPT / Grok / 豆包 / 通义 等生图聊天页内浏览中文 AI 脸库、服装库、姿势库（含多角度与深度图 Depth），选择后自动把高清参考图和提示词填入对话框，由你自己点击生成
 // @match        https://gemini.google.com/*
@@ -323,14 +323,23 @@
         for (const [lib] of LIBS) {
             const s = state.sel[lib];
             if (!s) continue;
-            // 填充时严格提取高清原图，仅在原图字段缺失时才降级为缩略图
-            const rel = (lib === 'pose' ? fullOf(s.item, s.ai, s.isDepth) : fullOf(s.item, s.ai)) ||
-                (lib === 'pose' ? thumbOf(s.item, s.isDepth) : thumbOf(s.item));
-            if (!rel) throw new Error(lib + ' 缺少图片地址，请检查字段映射');
-            const blob = await convertBlob(await fetchBlob(rel));
-            const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+            let blob;
+            let ext;
+            let id;
+            if (s.isCustom && s.file) {
+                blob = await convertBlob(s.file);
+                ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+                id = 'custom_' + Date.now();
+            } else {
+                // 填充时严格提取高清原图，仅在原图字段缺失时才降级为缩略图
+                const rel = (lib === 'pose' ? fullOf(s.item, s.ai, s.isDepth) : fullOf(s.item, s.ai)) ||
+                    (lib === 'pose' ? thumbOf(s.item, s.isDepth) : thumbOf(s.item));
+                if (!rel) throw new Error(lib + ' 缺少图片地址，请检查字段映射');
+                blob = await convertBlob(await fetchBlob(rel));
+                ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+                id = String(s.item.angles ? s.item.angles[s.ai].id || s.item.id : s.item.id).replace(/[^\w\-]+/g, '_');
+            }
             const depthTag = (lib === 'pose' && s.isDepth) ? '_depth' : '';
-            const id = String(s.item.angles ? s.item.angles[s.ai].id || s.item.id : s.item.id).replace(/[^\w\-]+/g, '_');
             files.push(new File([blob], lib + '-' + id + depthTag + '.' + ext, { type: blob.type }));
         }
         return files;
@@ -342,24 +351,36 @@
         const lines = []; let n = 0;
         if (face) {
             n++;
-            const h = [face.item.cat2, face.item.hair].filter(Boolean).join('·');
-            lines.push('图' + n + '（人像参考）：保持该人物的脸型与五官' + (h ? '，发型参考：' + h : '') + '。');
+            if (face.isCustom) {
+                lines.push('图' + n + '（人像参考）：保持该人物的脸型与五官。');
+            } else {
+                const h = [face.item.cat2, face.item.hair].filter(Boolean).join('·');
+                lines.push('图' + n + '（人像参考）：保持该人物的脸型与五官' + (h ? '，发型参考：' + h : '') + '。');
+            }
         }
         if (costume) {
             n++;
-            const c = costume.item;
-            const d = [c.title, c.desc].filter(Boolean).join('，');
-            lines.push('图' + n + '（服装参考）：让人物穿上图中这套服装' + (d ? '（' + d + '）' : '') + '，保留款式、颜色与细节。' + (c.en ? '\nKeywords: ' + c.en : ''));
+            if (costume.isCustom) {
+                lines.push('图' + n + '（服装参考）：让人物穿上图中这套服装，保留款式、颜色与细节。');
+            } else {
+                const c = costume.item;
+                const d = [c.title, c.desc].filter(Boolean).join('，');
+                lines.push('图' + n + '（服装参考）：让人物穿上图中这套服装' + (d ? '（' + d + '）' : '') + '，保留款式、颜色与细节。' + (c.en ? '\nKeywords: ' + c.en : ''));
+            }
         }
         if (pose) {
             n++;
-            const p = pose.item;
-            const a = p.angles && p.angles[pose.ai] ? p.angles[pose.ai].angle : '';
-            const ang = a ? '（' + a + '视角）' : '';
-            if (pose.isDepth) {
-                lines.push('图' + n + '（ControlNet 深度图参考）：严格按照该深度图（Depth Map）的空间景深结构、前后距离与四肢立体动态构图生图' + ang + '。');
+            if (pose.isCustom) {
+                lines.push('图' + n + '（姿势参考）：人物采用该图中的姿势与构图动作。');
             } else {
-                lines.push('图' + n + '（姿势参考）：人物采用该姿势：' + p.title + ang + '。该图是无脸灰色人台线稿，只参考动作与构图，不要保留人台外观。');
+                const p = pose.item;
+                const a = p.angles && p.angles[pose.ai] ? p.angles[pose.ai].angle : '';
+                const ang = a ? '（' + a + '视角）' : '';
+                if (pose.isDepth) {
+                    lines.push('图' + n + '（ControlNet 深度图参考）：严格按照该深度图（Depth Map）的空间景深结构、前后距离与四肢立体动态构图生图' + ang + '。');
+                } else {
+                    lines.push('图' + n + '（姿势参考）：人物采用该姿势：' + p.title + ang + '。该图是无脸灰色人台线稿，只参考动作与构图，不要保留人台外观。');
+                }
             }
         }
         const head = n ? '请参考我上传的 ' + n + ' 张图片，生成一张新图片：' : '请生成一张图片：';
@@ -736,12 +757,12 @@
 [hidden]{display:none!important}
 .r{--bg:#f6f7f8;--bg2:#fff;--ink:#20252b;--mu:#6b7480;--ln:#d9dde2;--ac:#2f5d8a;--ff:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;font:13px/1.4 var(--ff);color:var(--ink)}
 @media (prefers-color-scheme:dark){.r{--bg:#1d2126;--bg2:#272c33;--ink:#e6e9ed;--mu:#97a0ab;--ln:#3a4048;--ac:#6fa3d6}}
-.fab{position:fixed;z-index:2147483646;height:38px;padding:0 14px;border:0;border-radius:19px;background:var(--ac);color:#fff;font:600 13px var(--ff);cursor:default;box-shadow:0 2px 10px rgba(0,0,0,.3);user-select:none;-webkit-user-select:none;touch-action:none;display:flex;align-items:center;justify-content:center;gap:4px}
+.fab{position:fixed;z-index:2147483646;height:38px;padding:0 14px;border:0;border-radius:19px;background:var(--ac);color:#fff;font:600 13px var(--ff);cursor:default;box-shadow:0 2px 10px rgba(0,0,0,.3);user-select:none;-webkit-user-select:none;touch-action:none;display:flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap;width:max-content;flex-shrink:0;writing-mode:horizontal-tb}
 .fab.grabbing{opacity:.9}
 .fab.active{box-shadow:0 0 0 2px var(--bg), 0 0 0 4px var(--ac), 0 4px 16px rgba(0,0,0,.35)}
-.btn-sub{border:1px solid var(--ln);background:var(--bg);color:var(--ink);padding:3px 10px;border-radius:4px;cursor:pointer;font:11px var(--ff)}
+.btn-sub{border:1px solid var(--ln);background:var(--bg);color:var(--ink);padding:3px 10px;border-radius:4px;cursor:pointer;font:11px var(--ff);white-space:nowrap}
 .btn-sub:hover{border-color:var(--ac);color:var(--ac)}
-.panel{position:fixed;z-index:2147483647;width:440px;min-width:320px;max-width:calc(100vw - 16px);height:min(86vh,780px);min-height:360px;max-height:calc(100vh - 16px);display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--ln);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.3);overflow:hidden}
+.panel{position:fixed;z-index:2147483647;width:440px;min-width:280px;max-width:calc(100vw - 16px);height:min(86vh,780px);min-height:360px;max-height:calc(100vh - 16px);display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--ln);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.3);overflow:hidden}
 .panel.dragging{user-select:none;-webkit-user-select:none}
 header{display:flex;align-items:center;gap:4px;padding:8px 8px 0;border-bottom:1px solid var(--ln);cursor:default;user-select:none;-webkit-user-select:none;touch-action:none}
 header.grabbing{cursor:default}
@@ -755,10 +776,10 @@ header button, header .tabs{cursor:default}
 .rh-se{right:0;bottom:0;width:12px;height:12px;cursor:nwse-resize}
 .rh-ne{right:0;top:0;width:12px;height:12px;cursor:nesw-resize}
 .rh-sw{left:0;bottom:0;width:12px;height:12px;cursor:nesw-resize}
-.tabs{display:flex;flex:1;gap:2px}
-.tab{padding:7px 14px;border:0;background:none;color:var(--mu);font:600 13px var(--ff);cursor:pointer;border-bottom:2px solid transparent}
+.tabs{display:flex;flex:1;gap:2px;min-width:0;overflow:hidden}
+.tab{padding:7px 14px;border:0;background:none;color:var(--mu);font:600 13px var(--ff);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;flex-shrink:0}
 .tab.on{color:var(--ink);border-color:var(--ac)}
-.h-icon,.x{border:0;background:none;color:var(--mu);cursor:pointer;width:24px;height:24px;padding:0;border-radius:4px;display:inline-flex;align-items:center;justify-content:center}
+.h-icon,.x{border:0;background:none;color:var(--mu);cursor:pointer;width:24px;height:24px;padding:0;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 .h-icon:hover,.x:hover{color:var(--ink);background:var(--bg2)}
 .h-icon svg,.x svg{display:block;pointer-events:none}
 .bar{display:flex;gap:6px;padding:8px}
@@ -767,7 +788,7 @@ input,select,textarea{font:12px var(--ff);color:var(--ink);background:var(--bg2)
 .mode-bar{display:none;align-items:center;justify-content:space-between;padding:0 8px 6px}
 .mode-bar.show{display:flex}
 .seg{display:flex;background:var(--ln);border-radius:6px;padding:2px;gap:2px}
-.seg-btn{border:0;background:none;color:var(--mu);font:600 11px var(--ff);padding:3px 8px;border-radius:4px;cursor:pointer}
+.seg-btn{border:0;background:none;color:var(--mu);font:600 11px var(--ff);padding:3px 8px;border-radius:4px;cursor:pointer;white-space:nowrap}
 .seg-btn.on{background:var(--bg2);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.15)}
 .meta{padding:0 10px 4px;color:var(--mu);font-size:11px}
 .grid{flex:1 1 0;min-height:0;overflow:auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:max-content;gap:8px;padding:4px 8px 8px;align-content:start}
@@ -777,25 +798,32 @@ input,select,textarea{font:12px var(--ff);color:var(--ink);background:var(--bg2)
 .ph img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;display:block}
 .cap{padding:3px 5px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ang{display:flex;flex-wrap:wrap;gap:2px;padding:2px 4px 5px}
-.ang button{border:1px solid var(--ln);background:none;color:var(--mu);border-radius:4px;font-size:10px;padding:1px 5px;cursor:pointer;line-height:1.2}
+.ang button{border:1px solid var(--ln);background:none;color:var(--mu);border-radius:4px;font-size:10px;padding:1px 5px;cursor:pointer;line-height:1.2;white-space:nowrap}
 .ang button.on{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}
 .tray.warn{outline:2px solid #d9534f;outline-offset:-2px}
 .tray{display:flex;gap:6px;padding:6px 8px;border-top:1px solid var(--ln)}
 .slot{flex:1;display:flex;align-items:center;gap:6px;min-width:0;border:1px dashed var(--ln);border-radius:6px;padding:3px 5px;font-size:11px;color:var(--mu)}
-.slot img{width:26px;height:34px;object-fit:cover;border-radius:3px}
+.slot.slot-empty{cursor:pointer}
+.slot.slot-empty:hover{border-color:var(--ac);color:var(--ac)}
+.slot img{width:26px;height:34px;object-fit:cover;border-radius:3px;cursor:zoom-in;transition:transform .15s}
+.slot img:hover{transform:scale(1.08)}
 .slot span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.slot button{border:0;background:none;color:var(--mu);cursor:pointer}
+.slot button{border:0;background:none;color:var(--mu);cursor:pointer;flex-shrink:0;padding:0;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+.slot button:hover{color:#d9534f}
+.slot button.slot-add:hover{color:var(--ac)}
+.slot.slot-empty:hover .slot-add{color:var(--ac)}
 details{padding:4px 10px;border-top:1px solid var(--ln)}
 summary{cursor:pointer;font-weight:600;font-size:12px}
 .row{display:flex;gap:6px;margin:6px 0}.row input{flex:1;min-width:0}
 textarea{width:100%;resize:vertical;margin-top:2px}
 .link{border:0;background:none;color:var(--ac);cursor:pointer;font-size:11px;padding:2px 0}
 .set-group label{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0;font-size:12px}
-footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--ln)}
-#msg{flex:1;font-size:11px;color:var(--mu)}
-.go{border:0;border-radius:6px;background:var(--ac);color:#fff;padding:8px 14px;font:600 13px var(--ff);cursor:pointer}
+footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--ln)}
+#msg{flex:1;min-width:0;max-width:calc(50% - 30px);font-size:11px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#ver{position:absolute;left:50%;transform:translateX(-50%);font-size:11px;color:var(--mu);pointer-events:none;white-space:nowrap;user-select:none;-webkit-user-select:none}
+.go{border:0;border-radius:6px;background:var(--ac);color:#fff;padding:7px 7px;font:600 12px var(--ff);cursor:pointer;white-space:nowrap;flex-shrink:0;margin-left:auto}
 .go:disabled{opacity:.5;cursor:wait}
-.empty{grid-column:1/-1;padding:30px 0;text-align:center;color:var(--mu)}
+.grid-empty,.grid .empty{grid-column:1/-1;padding:30px 0;text-align:center;color:var(--mu)}
 .modal-mask{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:30;display:flex;align-items:center;justify-content:center;padding:14px;backdrop-filter:blur(2px)}
 .modal{width:100%;max-height:92%;background:var(--bg2);border:1px solid var(--ln);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden}
 .modal-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--ln);font:600 13px var(--ff);color:var(--ink)}
@@ -811,6 +839,17 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
 .modal-ft{padding:8px 14px;border-top:1px solid var(--ln);display:flex;justify-content:flex-end}
 .modal-btn{border:1px solid var(--ln);background:var(--bg);color:var(--ink);padding:4px 12px;border-radius:4px;cursor:pointer;font:12px var(--ff)}
 .modal-btn:hover{border-color:var(--ac);color:var(--ac)}
+.viewer-mask{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);user-select:none;-webkit-user-select:none}
+.viewer-hd{position:absolute;top:16px;left:20px;right:20px;display:flex;align-items:center;justify-content:space-between;pointer-events:none}
+.viewer-title{color:#fff;font-size:13px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.8);max-width:calc(100vw - 100px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.viewer-close{pointer-events:auto;background:rgba(255,255,255,.2);border:0;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background-color .15s}
+.viewer-close:hover{background:rgba(255,255,255,.38)}
+.viewer-spin{position:absolute;display:flex;flex-direction:column;align-items:center;gap:12px;color:#fff;font-size:12px;pointer-events:none;z-index:2;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+.viewer-spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:v-spin .8s linear infinite}
+@keyframes v-spin{to{transform:rotate(360deg)}}
+.viewer-img{max-width:min(90vw,1200px);max-height:85vh;object-fit:contain;border-radius:6px;box-shadow:0 8px 32px rgba(0,0,0,.7);cursor:zoom-out;transition:opacity .25s ease,filter .25s ease}
+.viewer-img.loading{opacity:.65;filter:blur(5px)}
+.viewer-img.loaded{opacity:1;filter:none}
 `;
     // 不使用 innerHTML / <style> 字符串注入，避免 Trusted Types 与 CSP 拦截
     try { const sh = new CSSStyleSheet(); sh.replaceSync(CSS); root.adoptedStyleSheets = [sh]; }
@@ -848,6 +887,10 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
             s.setAttribute('width', '15');
             s.setAttribute('height', '15');
             d = 'M19 5L5 19M5 5l14 14';
+        } else if (type === 'plus') {
+            s.setAttribute('width', '11');
+            s.setAttribute('height', '11');
+            d = 'M12 5v14M5 12h14';
         }
         const p = document.createElementNS(svgNS, 'path');
         p.setAttribute('d', d);
@@ -856,6 +899,7 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
     };
     const selK = (k, opts) => h('select', { 'data-k': k }, opts.map(([v, t]) => h('option', { value: v, textContent: t })));
     const chkK = (k) => h('input', { type: 'checkbox', 'data-k': k });
+    const verText = (typeof GM_info !== 'undefined' && GM_info.script?.version) ? 'v' + GM_info.script.version : '';
     root.append(h('div', { class: 'r' },
         h('button', { class: 'fab', id: 'fab', title: 'Alt+Shift+R', textContent: '参考库' }),
         h('section', { class: 'panel', id: 'panel', hidden: true },
@@ -885,7 +929,7 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
                 h('div', { class: 'row' }, h('select', { id: 'style' }), h('input', { id: 'extra', placeholder: '补充描述（可选）' })),
                 h('textarea', { id: 'ta', rows: 6 }),
                 h('button', { class: 'link', id: 'reset', textContent: '重置为自动生成' })),
-            h('footer', null, h('span', { id: 'msg' }), h('button', { class: 'go', id: 'go', textContent: '填充到对话框' })),
+            h('footer', null, h('span', { id: 'msg' }), h('span', { id: 'ver', textContent: verText, hidden: !verText }), h('button', { class: 'go', id: 'go', textContent: '填充到对话框' })),
             h('div', { class: 'modal-mask', id: 'settings-modal', hidden: true },
                 h('div', { class: 'modal' },
                     h('div', { class: 'modal-hd' },
@@ -936,17 +980,27 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
                                 h('a', { class: 'modal-a', href: 'https://github.com/yjiace/ai-ref-autofill', target: '_blank', rel: 'noopener noreferrer', textContent: 'yjiace/ai-ref-autofill' }),
                                 '，欢迎提交 Issue 反馈或建议。'))),
                     h('div', { class: 'modal-ft' },
-                        h('button', { class: 'modal-btn', id: 'modal-ok', textContent: '我知道了' })))))));
+                        h('button', { class: 'modal-btn', id: 'modal-ok', textContent: '我知道了' })))),
+            h('div', { class: 'viewer-mask', id: 'viewer-mask', hidden: true },
+                h('div', { class: 'viewer-hd' },
+                    h('span', { class: 'viewer-title', id: 'viewer-title' }),
+                    h('button', { class: 'viewer-close', id: 'viewer-close', title: '关闭 (Esc)' }, makeIcon('close'))),
+                h('div', { class: 'viewer-spin', id: 'viewer-spin' },
+                    h('div', { class: 'viewer-spinner' }),
+                    h('span', { id: 'viewer-spin-text', textContent: '正在加载高清原图…' })),
+                h('img', { class: 'viewer-img', id: 'viewer-img' })))));
 
     const $ = (s) => root.querySelector(s);
     const ui = {
         fab: $('#fab'), panel: $('#panel'), tabs: $('#tabs'), q: $('#q'), f1: $('#f1'), f2: $('#f2'),
         modeBar: $('#mode-bar'), btnNorm: $('#btn-norm'), btnDepth: $('#btn-depth'),
         meta: $('#meta'), grid: $('#grid'), tray: $('#tray'), style: $('#style'), extra: $('#extra'),
-        ta: $('#ta'), go: $('#go'), msg: $('#msg'),
+        ta: $('#ta'), go: $('#go'), msg: $('#msg'), ver: $('#ver'),
         btnSettings: $('#btn-settings'), btnAbout: $('#btn-about'),
         aboutModal: $('#about-modal'), modalClose: $('#modal-close'), modalOk: $('#modal-ok'),
         settingsModal: $('#settings-modal'), settingsClose: $('#settings-close'), settingsOk: $('#settings-ok'),
+        viewerMask: $('#viewer-mask'), viewerTitle: $('#viewer-title'), viewerImg: $('#viewer-img'), viewerClose: $('#viewer-close'),
+        viewerSpin: $('#viewer-spin'), viewerSpinText: $('#viewer-spin-text'),
         resetLayout: $('#reset-layout')
     };
     const msg = (t) => { ui.msg.textContent = t; };
@@ -1031,6 +1085,72 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
         return d;
     }
 
+    let uploadTargetLib = null;
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/png,image/jpeg,image/webp,image/gif,image/avif';
+    fileInput.style.display = 'none';
+    root.append(fileInput);
+
+    fileInput.addEventListener('change', () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file || !uploadTargetLib) return;
+        if (!file.type || !file.type.startsWith('image/')) {
+            msg('请选择有效的图片文件');
+            return;
+        }
+        const lim = getLimit();
+        if (!state.sel[uploadTargetLib] && lim && Object.keys(state.sel).length >= lim) {
+            msg('本站生图模式最多支持 ' + lim + ' 张参考图，请先取消已选的一项');
+            ui.tray.classList.add('warn');
+            setTimeout(() => ui.tray.classList.remove('warn'), 1500);
+            return;
+        }
+
+        if (state.sel[uploadTargetLib]?.isCustom && state.sel[uploadTargetLib]?.url) {
+            try { URL.revokeObjectURL(state.sel[uploadTargetLib].url); } catch (_) { }
+        }
+
+        const url = URL.createObjectURL(file);
+        state.sel[uploadTargetLib] = {
+            isCustom: true,
+            file,
+            url,
+            item: {
+                lib: uploadTargetLib,
+                id: 'custom-' + uploadTargetLib + '-' + Date.now(),
+                title: file.name.replace(/\.[^.]+$/, '') || file.name,
+                full: url,
+                thumb: url
+            },
+            ai: 0,
+            isDepth: false,
+        };
+
+        const targetLib = uploadTargetLib;
+        cardMap.forEach((el, k) => el.classList.toggle('on', isSel(k)));
+        renderTray();
+        refreshPrompt();
+
+        const labelName = targetLib === 'face' ? '人脸' : targetLib === 'costume' ? '服装' : '动作';
+        msg('已选择自定义' + labelName + '参考图');
+
+        autoAdvanceTab(targetLib);
+    });
+
+    function autoAdvanceTab(currentLib) {
+        const tabs = ['face', 'costume', 'pose'];
+        const idx = tabs.indexOf(currentLib);
+        if (idx === -1) return;
+        for (let i = idx + 1; i < tabs.length; i++) {
+            const next = tabs[i];
+            if (!state.sel[next]) {
+                switchTab(next);
+                return;
+            }
+        }
+    }
+
     function select(it, forceOn) {
         const turningOn = !(isSel(it) && !forceOn);
         const lim = getLimit();
@@ -1038,6 +1158,9 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
             msg('本站生图模式最多支持 ' + lim + ' 张参考图，请先取消已选的一项');
             ui.tray.classList.add('warn'); setTimeout(() => ui.tray.classList.remove('warn'), 1500);
             return;
+        }
+        if (state.sel[it.lib]?.isCustom && state.sel[it.lib]?.url) {
+            try { URL.revokeObjectURL(state.sel[it.lib].url); } catch (_) { }
         }
         if (isSel(it) && !forceOn) {
             delete state.sel[it.lib];
@@ -1050,31 +1173,160 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
         }
         cardMap.forEach((el, k) => el.classList.toggle('on', isSel(k)));
         renderTray(); refreshPrompt();
+
+        if (turningOn) {
+            autoAdvanceTab(it.lib);
+        }
+    }
+
+    let viewerLoadId = 0;
+    function openImageViewer(s, label) {
+        if (!s) return;
+        viewerLoadId++;
+        const currentLoadId = viewerLoadId;
+
+        const lib = s.item?.lib;
+        const angName = (lib === 'pose' && s.item?.angles && s.item?.angles[s.ai]) ? s.item.angles[s.ai].angle : '';
+        const depthBadge = (lib === 'pose' && s.isDepth) ? ' [深度图]' : '';
+        const customBadge = s.isCustom ? ' [自定义]' : '';
+        ui.viewerTitle.textContent = label + '参考：' + (s.item?.title || '自定义图片') + (angName ? '·' + angName : '') + depthBadge + customBadge;
+
+        ui.viewerMask.hidden = false;
+
+        // 本地自定义图片直接呈现完整画质，跳过加载状态
+        if (s.isCustom && s.url) {
+            ui.viewerSpin.hidden = true;
+            ui.viewerImg.className = 'viewer-img loaded';
+            ui.viewerImg.src = s.url;
+            return;
+        }
+
+        // 库内图片启动两阶段加载动效
+        ui.viewerSpin.hidden = false;
+        ui.viewerSpinText.textContent = '正在加载高清原图…';
+        ui.viewerImg.className = 'viewer-img loading';
+
+        // 阶段一：用已有的缩略图立即占位展示，0毫秒感知延迟
+        const thumbRel = (lib === 'pose' ? thumbOf(s.item, s.isDepth) : thumbOf(s.item));
+        if (thumbRel && tcache.has(thumbRel)) {
+            thumbURL(thumbRel).then((u) => {
+                if (currentLoadId === viewerLoadId && ui.viewerImg.classList.contains('loading')) {
+                    ui.viewerImg.src = u;
+                }
+            }).catch(() => { });
+        }
+
+        // 阶段二：后台预加载全尺寸高清原图
+        const fullRel = (lib === 'pose' ? fullOf(s.item, s.ai, s.isDepth) : fullOf(s.item, s.ai)) || thumbRel;
+        if (!fullRel) {
+            ui.viewerSpin.hidden = true;
+            ui.viewerImg.className = 'viewer-img loaded';
+            return;
+        }
+
+        const handleReadyUrl = (u) => {
+            if (currentLoadId !== viewerLoadId) return;
+            const pre = new Image();
+            pre.onload = () => {
+                if (currentLoadId !== viewerLoadId) return;
+                ui.viewerImg.src = u;
+                ui.viewerImg.className = 'viewer-img loaded';
+                ui.viewerSpin.hidden = true;
+            };
+            pre.onerror = () => {
+                if (currentLoadId !== viewerLoadId) return;
+                ui.viewerImg.className = 'viewer-img loaded';
+                ui.viewerSpinText.textContent = '高清原图加载失败';
+                setTimeout(() => {
+                    if (currentLoadId === viewerLoadId) ui.viewerSpin.hidden = true;
+                }, 1500);
+            };
+            pre.src = u;
+        };
+
+        if (isAbs(fullRel)) {
+            handleReadyUrl(fullRel);
+        } else {
+            thumbURL(fullRel).then((u) => {
+                handleReadyUrl(u);
+            }).catch(() => {
+                if (currentLoadId !== viewerLoadId) return;
+                ui.viewerImg.className = 'viewer-img loaded';
+                ui.viewerSpinText.textContent = '原图加载失败';
+                setTimeout(() => {
+                    if (currentLoadId === viewerLoadId) ui.viewerSpin.hidden = true;
+                }, 1500);
+            });
+        }
+    }
+
+    function closeImageViewer() {
+        viewerLoadId++;
+        ui.viewerMask.hidden = true;
+        ui.viewerSpin.hidden = true;
+        ui.viewerImg.src = '';
+        ui.viewerImg.className = 'viewer-img';
     }
 
     function renderTray() {
         ui.tray.replaceChildren();
         LIBS.forEach(([lib, label]) => {
             const s = state.sel[lib];
-            const d = document.createElement('div'); d.className = 'slot';
+            const d = document.createElement('div');
             if (!s) {
-                d.textContent = label + '：未选';
+                d.className = 'slot slot-empty';
+                d.title = label + '：未选，点击添加自定义本地图片';
+
+                const t = document.createElement('span');
+                t.textContent = label + '：未选';
+
+                const plusBtn = document.createElement('button');
+                plusBtn.className = 'slot-add';
+                plusBtn.type = 'button';
+                plusBtn.title = '添加自定义图片';
+                plusBtn.appendChild(makeIcon('plus'));
+
+                d.append(t, plusBtn);
+                d.onclick = () => {
+                    uploadTargetLib = lib;
+                    fileInput.value = '';
+                    fileInput.click();
+                };
             } else {
+                d.className = 'slot';
                 const im = document.createElement('img');
-                const rel = lib === 'pose'
-                    ? posePath(s.item.angles ? s.item.angles[s.ai]?.thumb : s.item.thumb, 'thumb', s.isDepth)
-                    : (s.item.angles ? s.item.angles[s.ai]?.thumb : s.item.thumb);
-                setThumb(im, rel);
+                im.title = '点击放大查看原图';
+                im.onclick = (ev) => {
+                    ev.stopPropagation();
+                    openImageViewer(s, label);
+                };
+                if (s.isCustom) {
+                    im.src = s.url;
+                } else {
+                    const rel = lib === 'pose'
+                        ? posePath(s.item.angles ? s.item.angles[s.ai]?.thumb : s.item.thumb, 'thumb', s.isDepth)
+                        : (s.item.angles ? s.item.angles[s.ai]?.thumb : s.item.thumb);
+                    setThumb(im, rel);
+                }
                 const angName = (lib === 'pose' && s.item.angles && s.item.angles[s.ai]) ? s.item.angles[s.ai].angle : '';
                 const depthBadge = (lib === 'pose' && s.isDepth) ? ' [深度图]' : '';
+                const customBadge = s.isCustom ? ' [自定义]' : '';
                 const t = document.createElement('span');
-                t.textContent = label + '：' + s.item.title + (angName ? '·' + angName : '') + depthBadge;
+                t.textContent = label + '：' + (s.item.title || '自定义') + (angName ? '·' + angName : '') + depthBadge + customBadge;
                 t.title = t.textContent;
-                const x = document.createElement('button'); x.textContent = '✕';
-                x.onclick = () => {
+                const x = document.createElement('button');
+                x.type = 'button';
+                x.textContent = '✕';
+                x.title = '取消选择';
+                x.onclick = (ev) => {
+                    ev.stopPropagation();
+                    if (s.isCustom && s.url) {
+                        try { URL.revokeObjectURL(s.url); } catch (_) { }
+                    }
                     delete state.sel[lib];
                     cardMap.forEach((el, k) => el.classList.toggle('on', isSel(k)));
-                    renderTray(); refreshPrompt();
+                    renderTray();
+                    refreshPrompt();
                 };
                 d.append(im, t, x);
             }
@@ -1134,6 +1386,7 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
     const closeAllModals = () => {
         ui.aboutModal.hidden = true;
         ui.settingsModal.hidden = true;
+        closeImageViewer();
     };
     const openModal = (m) => {
         closeAllModals();
@@ -1149,6 +1402,11 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
     ui.settingsClose.onclick = closeAllModals;
     ui.settingsOk.onclick = closeAllModals;
     ui.settingsModal.onclick = (e) => { if (e.target === ui.settingsModal) closeAllModals(); };
+
+    ui.viewerClose.onclick = closeImageViewer;
+    ui.viewerMask.onclick = (e) => {
+        if (e.target === ui.viewerMask || e.target === ui.viewerImg) closeImageViewer();
+    };
 
     /* ───────────── 拖拽、缩放、锚定与位置持久化 ───────────── */
     function defaultFabPos() {
@@ -1488,7 +1746,7 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
     $('#close').onclick = () => toggle(false);
     addEventListener('keydown', (e) => {
         if (e.altKey && e.shiftKey && e.code === 'KeyR') toggle();
-        if (e.key === 'Escape' && (!ui.aboutModal.hidden || !ui.settingsModal.hidden)) closeAllModals();
+        if (e.key === 'Escape' && (!ui.aboutModal.hidden || !ui.settingsModal.hidden || !ui.viewerMask.hidden)) closeAllModals();
     }, true);
 
     // 点击区域外自动隐藏面板
@@ -1496,7 +1754,7 @@ footer{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px s
         if (ui.panel.hidden) return;
         if (state.dragging || state.resizing || state.fabDragging) return;
         const path = e.composedPath ? e.composedPath() : [];
-        if (path.includes(host) || path.includes(ui.panel) || path.includes(ui.fab)) return;
+        if (path.includes(host) || path.includes(ui.panel) || path.includes(ui.fab) || path.includes(ui.viewerMask)) return;
         toggle(false);
     }, true);
 
