@@ -2,7 +2,7 @@
 // @name         AI 生图参考图一键填充
 // @namespace    https://github.com/yjiace/ai-ref-autofill
 // @supportURL   https://github.com/yjiace/ai-ref-autofill/issues
-// @version      0.0.3
+// @version      0.0.4
 // @license      MIT
 // @description  在 Gemini / ChatGPT / Grok / 豆包 / 通义 等生图聊天页内浏览中文 AI 脸库、服装库、姿势库（含多角度与深度图 Depth），选择后自动把高清参考图和提示词填入对话框，由你自己点击生成
 // @match        https://gemini.google.com/*
@@ -810,6 +810,7 @@ input,select,textarea{font:12px var(--ff);color:var(--ink);background:var(--bg2)
 .slot span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .slot button{border:0;background:none;color:var(--mu);cursor:pointer;flex-shrink:0;padding:0;line-height:1;display:inline-flex;align-items:center;justify-content:center}
 .slot button:hover{color:#d9534f}
+.slot button svg{display:block;pointer-events:none}
 .slot button.slot-add:hover{color:var(--ac)}
 .slot.slot-empty:hover .slot-add{color:var(--ac)}
 details{padding:4px 10px;border-top:1px solid var(--ln)}
@@ -837,8 +838,21 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
 .modal-a{color:var(--ac);text-decoration:none}
 .modal-a:hover{text-decoration:underline}
 .modal-ft{padding:8px 14px;border-top:1px solid var(--ln);display:flex;justify-content:flex-end}
+.modal-ft.modal-ft-between{justify-content:space-between;align-items:center}
 .modal-btn{border:1px solid var(--ln);background:var(--bg);color:var(--ink);padding:4px 12px;border-radius:4px;cursor:pointer;font:12px var(--ff)}
 .modal-btn:hover{border-color:var(--ac);color:var(--ac)}
+.modal-btn.primary{background:var(--ac);color:#fff;border-color:var(--ac)}
+.modal-btn.primary:hover{opacity:.9;color:#fff}
+.tour-overlay{position:fixed;inset:0;z-index:2147483646;overflow:hidden;pointer-events:auto}
+.tour-backdrop{position:absolute;inset:0;background:transparent}
+.tour-spotlight{position:absolute;border-radius:8px;border:2px solid var(--ac);box-shadow:0 0 0 9999px rgba(0,0,0,.62), 0 0 16px rgba(47,93,138,.55);pointer-events:none;transition:all .28s cubic-bezier(0.4, 0, 0.2, 1)}
+.tour-popover{position:absolute;width:290px;max-width:calc(100vw - 28px);background:var(--bg2);border:1px solid var(--ln);border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.45);padding:12px 14px;display:flex;flex-direction:column;gap:6px;z-index:2147483647;transition:all .28s cubic-bezier(0.4, 0, 0.2, 1)}
+.tour-hd{display:flex;align-items:center;justify-content:space-between}
+.tour-tag{font-size:11px;font-weight:600;color:var(--ac);background:rgba(47,93,138,.12);padding:2px 8px;border-radius:10px;line-height:1.2}
+.tour-title{font-size:13px;font-weight:600;color:var(--ink);margin:3px 0 2px}
+.tour-desc{font-size:12px;color:var(--mu);line-height:1.55;margin:0}
+.tour-ft{display:flex;align-items:center;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid var(--ln)}
+.tour-nav{display:flex;gap:6px}
 .viewer-mask{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);user-select:none;-webkit-user-select:none}
 .viewer-hd{position:absolute;top:16px;left:20px;right:20px;display:flex;align-items:center;justify-content:space-between;pointer-events:none}
 .viewer-title{color:#fff;font-size:13px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.8);max-width:calc(100vw - 100px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -866,7 +880,7 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
         return e;
     };
     const svgNS = 'http://www.w3.org/2000/svg';
-    const makeIcon = (type) => {
+    const makeIcon = (type, size) => {
         const s = document.createElementNS(svgNS, 'svg');
         s.setAttribute('viewBox', '0 0 24 24');
         s.setAttribute('fill', 'none');
@@ -875,23 +889,32 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
         s.setAttribute('stroke-linecap', 'round');
         s.setAttribute('stroke-linejoin', 'round');
         let d = '';
+        let w = size || 14;
+        let h = size || 14;
         if (type === 'settings') {
-            s.setAttribute('width', '14');
-            s.setAttribute('height', '14');
+            w = size || 14; h = size || 14;
             d = 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z';
+        } else if (type === 'help') {
+            w = size || 14; h = size || 14;
+            d = 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3 M12 17h.01';
         } else if (type === 'about') {
-            s.setAttribute('width', '15');
-            s.setAttribute('height', '15');
+            w = size || 14; h = size || 14;
             d = 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z M12 16v-4 M12 8h.01';
         } else if (type === 'close') {
-            s.setAttribute('width', '15');
-            s.setAttribute('height', '15');
+            w = size || 14; h = size || 14;
             d = 'M19 5L5 19M5 5l14 14';
         } else if (type === 'plus') {
-            s.setAttribute('width', '11');
-            s.setAttribute('height', '11');
+            w = size || 11; h = size || 11;
             d = 'M12 5v14M5 12h14';
+        } else if (type === 'refresh') {
+            w = size || 12; h = size || 12;
+            d = 'M23 4v6h-6 M1 20v-6h6 M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15';
+        } else if (type === 'moon') {
+            w = size || 12; h = size || 12;
+            d = 'M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9Z M12 3v18';
         }
+        s.setAttribute('width', String(w));
+        s.setAttribute('height', String(h));
         const p = document.createElementNS(svgNS, 'path');
         p.setAttribute('d', d);
         s.append(p);
@@ -915,13 +938,14 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
                 h('nav', { class: 'tabs', id: 'tabs' }),
                 h('button', { class: 'h-icon', id: 'btn-settings', title: '设置' }, makeIcon('settings')),
                 h('button', { class: 'h-icon', id: 'btn-about', title: '关于 / 数据来源' }, makeIcon('about')),
+                h('button', { class: 'h-icon', id: 'btn-help', title: '操作说明' }, makeIcon('help')),
                 h('button', { class: 'x', id: 'close', title: '关闭' }, makeIcon('close'))),
             h('div', { class: 'bar' }, h('input', { id: 'q', placeholder: '搜索 中文 / English / 编号' }), h('select', { id: 'f1' }), h('select', { id: 'f2' })),
             h('div', { class: 'mode-bar', id: 'mode-bar' },
                 h('span', { style: 'font-size:11px;color:var(--mu);', textContent: '姿势图视图模式：' }),
                 h('div', { class: 'seg' },
                     h('button', { class: 'seg-btn on', id: 'btn-norm', textContent: '3D 白模' }),
-                    h('button', { class: 'seg-btn', id: 'btn-depth', textContent: '🌗 深度图 (Depth)' }))),
+                    h('button', { class: 'seg-btn', id: 'btn-depth', textContent: '🌗 深度图' }))),
             h('div', { class: 'meta', id: 'meta' }),
             h('div', { class: 'grid', id: 'grid' }),
             h('div', { class: 'tray', id: 'tray' }),
@@ -930,10 +954,53 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
                 h('textarea', { id: 'ta', rows: 6 }),
                 h('button', { class: 'link', id: 'reset', textContent: '重置为自动生成' })),
             h('footer', null, h('span', { id: 'msg' }), h('span', { id: 'ver', textContent: verText, hidden: !verText }), h('button', { class: 'go', id: 'go', textContent: '填充到对话框' })),
+            h('div', { class: 'modal-mask', id: 'help-modal', hidden: true },
+                h('div', { class: 'modal' },
+                    h('div', { class: 'modal-hd' },
+                        h('span', { style: 'display:inline-flex;align-items:center;gap:6px' }, makeIcon('help', 13), '操作说明与使用指南'),
+                        h('button', { class: 'x', id: 'help-close', title: '关闭' }, makeIcon('close'))),
+                    h('div', { class: 'modal-bd' },
+                        h('div', { class: 'modal-sec' },
+                            h('div', { class: 'modal-title', textContent: '1. 挑选与搭配参考图' }),
+                            h('p', { class: 'modal-p', textContent: '点击上方「脸 / 服装 / 姿势」标签切换参考库，点击卡片即可选中作为当前生图参考。姿势库支持多视角切换，以及 3D 白模与 深度图 (Depth) 视图无缝切换。' })),
+                        h('div', { class: 'modal-sec' },
+                            h('div', { class: 'modal-title', textContent: '2. 添加本地自定义参考图' }),
+                            h('p', { class: 'modal-p', textContent: '在底部参考图栏中，点击未选插槽右侧的「+」号按钮，即可上传你电脑里的本地图片，与官方参考库自由混合搭配。' })),
+                        h('div', { class: 'modal-sec' },
+                            h('div', { class: 'modal-title', textContent: '3. 原图放大查看与移除' }),
+                            h('p', { class: 'modal-p', textContent: '点击底部托盘中已选参考图的缩略图，可立即全屏放大查看高清无损原图；点击右侧的取消按钮即可随时取消该参考图。' })),
+                        h('div', { class: 'modal-sec' },
+                            h('div', { class: 'modal-title', textContent: '4. 提示词风格与灵活补充' }),
+                            h('p', { class: 'modal-p', textContent: '助手会自动生成符合主流生图模型规范的中英双语提示词。你可以在下拉框选择写实、二次元、2.5D等多种预设风格，或在文本框直接修改或输入补充描述。' })),
+                        h('div', { class: 'modal-sec' },
+                            h('div', { class: 'modal-title', textContent: '5. 一键填充至聊天输入框' }),
+                            h('p', { class: 'modal-p', textContent: '选好参考图后，点击右下角「填充到对话框」，脚本会自动将高清参考图文件与提示词一键注入至当前 AI 对话框（支持在设置中开启填充后自动发送）。' })),
+                        h('div', { class: 'modal-sec' },
+                            h('div', { class: 'modal-title', textContent: '6. 快捷键与自由排版' }),
+                            h('p', { class: 'modal-p', textContent: '• 全局快捷键：Alt + Shift + R 随时呼出或收起面板。' }),
+                            h('p', { class: 'modal-p', textContent: '• 拖拽与缩放：按住面板标题栏或悬浮图标可任意拖动，拖拽面板边缘或四角可八向调整尺寸。' }))),
+                    h('div', { class: 'modal-ft modal-ft-between' },
+                        h('button', { class: 'btn-sub', id: 'btn-restart-guide', type: 'button', style: 'display:inline-flex;align-items:center;gap:4px' }, makeIcon('refresh', 12), '重新查看新手引导'),
+                        h('button', { class: 'modal-btn', id: 'help-ok', textContent: '我知道了' })))),
+            h('div', { class: 'tour-overlay', id: 'tour-overlay', hidden: true },
+                h('div', { class: 'tour-backdrop', id: 'tour-backdrop' }),
+                h('div', { class: 'tour-spotlight', id: 'tour-spotlight' }),
+                h('div', { class: 'tour-popover', id: 'tour-popover' },
+                    h('div', { class: 'tour-hd' },
+                        h('span', { class: 'tour-tag', id: 'tour-tag' }),
+                        h('button', { class: 'x', id: 'tour-close', title: '退出引导' }, makeIcon('close'))),
+                    h('div', { class: 'tour-bd' },
+                        h('div', { class: 'tour-title', id: 'tour-title' }),
+                        h('p', { class: 'tour-desc', id: 'tour-desc' })),
+                    h('div', { class: 'tour-ft' },
+                        h('button', { class: 'link', id: 'tour-skip', type: 'button', textContent: '跳过' }),
+                        h('div', { class: 'tour-nav' },
+                            h('button', { class: 'modal-btn', id: 'tour-prev', textContent: '上一步' }),
+                            h('button', { class: 'modal-btn primary', id: 'tour-next', textContent: '下一步' }))))),
             h('div', { class: 'modal-mask', id: 'settings-modal', hidden: true },
                 h('div', { class: 'modal' },
                     h('div', { class: 'modal-hd' },
-                        h('span', null, '⚙️ 偏好设置'),
+                        h('span', { style: 'display:inline-flex;align-items:center;gap:6px' }, makeIcon('settings', 14), '偏好设置'),
                         h('button', { class: 'x', id: 'settings-close', title: '关闭' }, makeIcon('close'))),
                     h('div', { class: 'modal-bd' },
                         h('div', { class: 'set-group' },
@@ -955,7 +1022,7 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
                         h('button', { class: 'x', id: 'modal-close', title: '关闭' }, makeIcon('close'))),
                     h('div', { class: 'modal-bd' },
                         h('div', { class: 'modal-sec' },
-                            h('div', { class: 'modal-title', textContent: '📌 数据与素材致谢' }),
+                            h('div', { class: 'modal-title', textContent: '数据与素材致谢' }),
                             h('p', { class: 'modal-p' },
                                 '本脚本展示的人像、服装、姿势参考库及检索数据基于开源项目 ',
                                 h('a', { class: 'modal-a', href: 'https://github.com/anhao/ai-pose-gallery-zh', target: '_blank', rel: 'noopener noreferrer', textContent: 'anhao/ai-pose-gallery-zh' }),
@@ -965,16 +1032,16 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
                                 h('li', null, '二次元服装库作者：たき AI ', h('a', { class: 'modal-a', href: 'https://x.com/taki_auto', target: '_blank', rel: 'noopener noreferrer', textContent: '@taki_auto' }), ' · CharaDB'),
                                 h('li', null, '现实穿搭库：整理自公共参考数据集'))),
                         h('div', { class: 'modal-sec' },
-                            h('div', { class: 'modal-title', textContent: '⚖️ 版权与授权说明' }),
+                            h('div', { class: 'modal-title', textContent: '版权与授权说明' }),
                             h('ul', { class: 'modal-ul' },
                                 h('li', null, '人像脸库遵循 CC0 1.0 Universal 公共领域贡献协议。'),
                                 h('li', null, '姿势库、服装库图片素材严禁用于二次分发、商业打包或转售。'))),
                         h('div', { class: 'modal-sec' },
-                            h('div', { class: 'modal-title', textContent: '🛡️ 免责声明' }),
+                            h('div', { class: 'modal-title', textContent: '免责声明' }),
                             h('p', { class: 'modal-p', textContent: '1. 本脚本为前端辅助生图工具，只在运行时从公开 CDN 节点按需获取参考图，脚本本身不打包、不转储、不再分发任何版权图片。' }),
                             h('p', { class: 'modal-p', textContent: '2. 用户使用本工具所选取的参考图及在各 AI 对话平台生成的一切图像内容，均由使用者自行负责。请在遵守原素材开源协议、各生图平台服务条款及相关法律法规的前提下使用。' })),
                         h('div', { class: 'modal-sec' },
-                            h('div', { class: 'modal-title', textContent: '💡 开源协议与项目' }),
+                            h('div', { class: 'modal-title', textContent: '开源协议与项目' }),
                             h('p', { class: 'modal-p' },
                                 '脚本源码遵循 MIT License 开源协议，项目地址：',
                                 h('a', { class: 'modal-a', href: 'https://github.com/yjiace/ai-ref-autofill', target: '_blank', rel: 'noopener noreferrer', textContent: 'yjiace/ai-ref-autofill' }),
@@ -996,7 +1063,12 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
         modeBar: $('#mode-bar'), btnNorm: $('#btn-norm'), btnDepth: $('#btn-depth'),
         meta: $('#meta'), grid: $('#grid'), tray: $('#tray'), style: $('#style'), extra: $('#extra'),
         ta: $('#ta'), go: $('#go'), msg: $('#msg'), ver: $('#ver'),
-        btnSettings: $('#btn-settings'), btnAbout: $('#btn-about'),
+        btnHelp: $('#btn-help'), btnSettings: $('#btn-settings'), btnAbout: $('#btn-about'),
+        helpModal: $('#help-modal'), helpClose: $('#help-close'), helpOk: $('#help-ok'),
+        btnRestartGuide: $('#btn-restart-guide'),
+        tourOverlay: $('#tour-overlay'), tourSpotlight: $('#tour-spotlight'), tourPopover: $('#tour-popover'),
+        tourTag: $('#tour-tag'), tourTitle: $('#tour-title'), tourDesc: $('#tour-desc'),
+        tourClose: $('#tour-close'), tourSkip: $('#tour-skip'), tourPrev: $('#tour-prev'), tourNext: $('#tour-next'),
         aboutModal: $('#about-modal'), modalClose: $('#modal-close'), modalOk: $('#modal-ok'),
         settingsModal: $('#settings-modal'), settingsClose: $('#settings-close'), settingsOk: $('#settings-ok'),
         viewerMask: $('#viewer-mask'), viewerTitle: $('#viewer-title'), viewerImg: $('#viewer-img'), viewerClose: $('#viewer-close'),
@@ -1316,8 +1388,9 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
                 t.title = t.textContent;
                 const x = document.createElement('button');
                 x.type = 'button';
-                x.textContent = '✕';
+                x.className = 'slot-del';
                 x.title = '取消选择';
+                x.appendChild(makeIcon('close', 10));
                 x.onclick = (ev) => {
                     ev.stopPropagation();
                     if (s.isCustom && s.url) {
@@ -1386,11 +1459,151 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
     const closeAllModals = () => {
         ui.aboutModal.hidden = true;
         ui.settingsModal.hidden = true;
+        ui.helpModal.hidden = true;
+        ui.tourOverlay.hidden = true;
         closeImageViewer();
     };
     const openModal = (m) => {
         closeAllModals();
         m.hidden = false;
+    };
+
+    const TOUR_STEPS = [
+        {
+            tag: '步骤 1 / 4',
+            title: '🎨 挑选与切换参考库',
+            desc: '在顶部切换脸部、服装、姿势图库，点击卡片即可选入参考图；姿势库更支持多视角与 3D 深度图 (Depth) 切换。',
+            placement: 'bottom',
+            getTarget: () => ui.tabs,
+            onBefore: () => { }
+        },
+        {
+            tag: '步骤 2 / 4',
+            title: '📁 槽位托盘与本地上传',
+            desc: '已选参考图在此呈现。点击缩略图可全屏查看高清原图；点击未选槽位右侧的「+」可直接上传本地图片混合搭配。',
+            placement: 'top',
+            getTarget: () => ui.tray,
+            onBefore: () => { }
+        },
+        {
+            tag: '步骤 3 / 4',
+            title: '✍️ 提示词风格与灵活补充',
+            desc: '系统会根据选图自动生成双语生图 Prompt。你可以在下拉框选择写实、二次元等预设风格，或在文本框直接输入补充要求。',
+            placement: 'top',
+            getTarget: () => ui.panel.querySelector('details'),
+            onBefore: () => {
+                const det = ui.panel.querySelector('details');
+                if (det) det.open = true;
+            }
+        },
+        {
+            tag: '步骤 4 / 4',
+            title: '🚀 一键注入到对话框',
+            desc: '选好参考图后，点击此处即可把高清图片与提示词一键填入聊天框！全局快捷键 Alt + Shift + R 可随时呼出/收起面板。',
+            placement: 'top',
+            getTarget: () => ui.go,
+            onBefore: () => { }
+        }
+    ];
+
+    let currentTourStep = 0;
+    function updateTourPos() {
+        if (ui.tourOverlay.hidden) return;
+        const step = TOUR_STEPS[currentTourStep];
+        if (!step) return;
+        const target = step.getTarget();
+        if (!target) return;
+
+        if (step.onBefore) step.onBefore();
+
+        const rect = target.getBoundingClientRect();
+        const pad = 4;
+        const sLeft = Math.max(0, rect.left - pad);
+        const sTop = Math.max(0, rect.top - pad);
+        const sWidth = rect.width + pad * 2;
+        const sHeight = rect.height + pad * 2;
+
+        ui.tourSpotlight.style.left = sLeft + 'px';
+        ui.tourSpotlight.style.top = sTop + 'px';
+        ui.tourSpotlight.style.width = sWidth + 'px';
+        ui.tourSpotlight.style.height = sHeight + 'px';
+
+        const popW = Math.min(290, window.innerWidth - 24);
+        ui.tourPopover.style.width = popW + 'px';
+        const popH = ui.tourPopover.offsetHeight || 150;
+
+        let pTop;
+        if (step.placement === 'bottom' || (sTop < popH + 20 && sTop + sHeight + popH + 20 < window.innerHeight)) {
+            pTop = sTop + sHeight + 8;
+        } else {
+            pTop = Math.max(12, sTop - popH - 8);
+        }
+
+        let pLeft = Math.max(12, Math.min(sLeft + (sWidth - popW) / 2, window.innerWidth - popW - 12));
+
+        ui.tourPopover.style.left = pLeft + 'px';
+        ui.tourPopover.style.top = pTop + 'px';
+    }
+
+    function renderTourStep(idx) {
+        currentTourStep = idx;
+        const step = TOUR_STEPS[idx];
+        ui.tourTag.textContent = step.tag;
+        ui.tourTitle.textContent = step.title;
+        ui.tourDesc.textContent = step.desc;
+
+        ui.tourPrev.hidden = idx === 0;
+        ui.tourNext.textContent = idx === TOUR_STEPS.length - 1 ? '完成并开始使用' : '下一步';
+
+        requestAnimationFrame(() => {
+            updateTourPos();
+        });
+    }
+
+    function startTour(idx = 0) {
+        closeAllModals();
+        if (ui.panel.hidden) toggle(true);
+        ui.tourOverlay.hidden = false;
+        renderTourStep(idx);
+    }
+
+    function closeTour() {
+        ui.tourOverlay.hidden = true;
+        try { GM_setValue('guide_completed_v1', true); } catch (_) { }
+    }
+
+    function checkFirstRunGuide() {
+        const completed = GM_getValue('guide_completed_v1', false);
+        if (!completed) {
+            setTimeout(() => {
+                if (!ui.panel.hidden && ui.aboutModal.hidden && ui.settingsModal.hidden && ui.helpModal.hidden) {
+                    startTour(0);
+                }
+            }, 300);
+        }
+    }
+
+    ui.btnHelp.onclick = (e) => { e.stopPropagation(); openModal(ui.helpModal); };
+    ui.helpClose.onclick = closeAllModals;
+    ui.helpOk.onclick = closeAllModals;
+    ui.helpModal.onclick = (e) => { if (e.target === ui.helpModal) closeAllModals(); };
+
+    ui.btnRestartGuide.onclick = (e) => {
+        e.stopPropagation();
+        startTour(0);
+    };
+
+    ui.tourClose.onclick = closeTour;
+    ui.tourSkip.onclick = closeTour;
+    ui.tourPrev.onclick = () => {
+        if (currentTourStep > 0) renderTourStep(currentTourStep - 1);
+    };
+    ui.tourNext.onclick = () => {
+        if (currentTourStep < TOUR_STEPS.length - 1) {
+            renderTourStep(currentTourStep + 1);
+        } else {
+            closeTour();
+        }
     };
 
     ui.btnAbout.onclick = (e) => { e.stopPropagation(); openModal(ui.aboutModal); };
@@ -1739,6 +1952,7 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
         if (show) {
             anchorPanel();
             if (!state.items[state.tab] && !state.loading) switchTab(state.tab);
+            checkFirstRunGuide();
         } else {
             closeAllModals();
         }
@@ -1746,15 +1960,15 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
     $('#close').onclick = () => toggle(false);
     addEventListener('keydown', (e) => {
         if (e.altKey && e.shiftKey && e.code === 'KeyR') toggle();
-        if (e.key === 'Escape' && (!ui.aboutModal.hidden || !ui.settingsModal.hidden || !ui.viewerMask.hidden)) closeAllModals();
+        if (e.key === 'Escape' && (!ui.aboutModal.hidden || !ui.settingsModal.hidden || !ui.helpModal.hidden || !ui.tourOverlay.hidden || !ui.viewerMask.hidden)) closeAllModals();
     }, true);
 
     // 点击区域外自动隐藏面板
     addEventListener('pointerdown', (e) => {
         if (ui.panel.hidden) return;
-        if (state.dragging || state.resizing || state.fabDragging) return;
+        if (state.dragging || state.resizing || state.fabDragging || !ui.tourOverlay.hidden) return;
         const path = e.composedPath ? e.composedPath() : [];
-        if (path.includes(host) || path.includes(ui.panel) || path.includes(ui.fab) || path.includes(ui.viewerMask)) return;
+        if (path.includes(host) || path.includes(ui.panel) || path.includes(ui.fab) || path.includes(ui.viewerMask) || path.includes(ui.tourOverlay)) return;
         toggle(false);
     }, true);
 
@@ -1764,6 +1978,7 @@ footer{position:relative;display:flex;align-items:center;gap:8px;padding:8px 10p
         applyFabPos(curFab);
         if (!ui.panel.hidden) {
             anchorPanel();
+            updateTourPos();
         }
     });
 
